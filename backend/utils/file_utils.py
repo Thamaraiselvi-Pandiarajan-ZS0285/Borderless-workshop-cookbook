@@ -1,6 +1,7 @@
 import os
 import tempfile
 import logging
+from fastapi import UploadFile
 from backend.utils.base_64_operations import Base64Conversion
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ if not logger.handlers:
     logger.addHandler(ch)
 
 
-class FileUtils:
+class Base64FileUtils:
     def __init__(self, input_data: str, file_name: str, file_extension: str):
         """
         :param input_data: Base64-encoded string
@@ -25,7 +26,7 @@ class FileUtils:
         self.file_name = file_name
         self.file_extension = file_extension
 
-    def file_save(self) -> str | None:
+    def base64_file_save(self) -> str | None:
         """
         Validates and decodes base64 input, saves it to a temp file,
         and returns the path. Returns None if validation fails.
@@ -52,3 +53,37 @@ class FileUtils:
         except Exception as e:
             logger.exception("Failed to decode and save base64 file.")
             raise ValueError("An error occurred while processing the base64 data.") from e
+
+class FilePathUtils:
+
+    def __init__(self, file: UploadFile|None, temp_dir: str | None = None):
+        self.file = file
+        self.temp_dir = temp_dir or tempfile.mkdtemp()
+        logger.info(f"Temporary directory created at: {self.temp_dir}")
+
+    def file_dir(self) -> str:
+        """Returns or creates a temporary directory."""
+        if not self.temp_dir:
+            self.temp_dir = tempfile.mkdtemp()
+            logger.info(f"Temporary directory created at: {self.temp_dir}")
+        return self.temp_dir
+
+    def get_file_name(self) -> str:
+        """Get the file name without extension."""
+        return os.path.splitext(self.file.filename)[0]
+
+    def get_file_extension(self) -> str:
+        """Get the file extension."""
+        return os.path.splitext(self.file.filename)[1]
+
+    def file_path_based_file_save(self) -> str:
+        """Save file to the temp directory and return full path."""
+        file_path = os.path.join(self.temp_dir, self.file.filename)
+        with open(file_path, "wb") as buffer:
+            buffer.write(self.file.file.read())
+        logger.info(f"File saved at: {file_path}")
+        return file_path
+
+
+
+
