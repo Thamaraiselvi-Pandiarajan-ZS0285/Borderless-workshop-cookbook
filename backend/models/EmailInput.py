@@ -10,5 +10,3 @@ class EmailInput(BaseModel):
     content: str            # Raw email content
     format: EmailFormat
 
-
-
