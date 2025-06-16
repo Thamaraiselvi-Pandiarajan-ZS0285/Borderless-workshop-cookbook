@@ -5,15 +5,15 @@ import uuid
 import mimetypes
 
 from contextlib import asynccontextmanager
+from pyexpat.errors import messages
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.responses import JSONResponse, FileResponse
-
-from backend.app.file_operations import FileToBase64
+from backend.app.core.file_operations import FileToBase64
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
-from backend.config.db_config import *;
+from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.utils.base_64_operations import Base64Conversion, Base64Utils
+from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -99,7 +99,7 @@ async def do_encode(file: UploadFile = File(...)):
 async def decode_file(
     base64_string: str = Body(..., embed=True),
     file_name: str = Body("decoded_file", embed=True),
-    extension: str = Body(".txt", embed=True)
+    extension: str = Body(".jpg", embed=True)
 ):
     try:
         base64_validator = Base64Utils.is_valid_base64(base64_string)
@@ -107,16 +107,13 @@ async def decode_file(
             logger.warning("Invalid base64 input received.")
             raise HTTPException(status_code=400, detail="Provided string is not valid base64.")
 
-        # Step 2: Create output directory and file path
         file_utils = FilePathUtils(file=None, temp_dir=None)
         output_dir = file_utils.file_dir()
         safe_file_name = f"{file_name}_{uuid.uuid4().hex}{extension}"
         output_path = os.path.join(output_dir, safe_file_name)
 
-        # Step 3: Decode and write the file
         FileToBase64.decode_base64_to_file(base64_string, output_path)
 
-        # Step 4: Determine MIME type
         mime_type, _ = mimetypes.guess_type(output_path)
         media_type = mime_type or "application/octet-stream"
 
@@ -135,7 +132,7 @@ async def decode_file(
         raise HTTPException(status_code=400, detail="Invalid base64 data. Cannot decode.")
 
     except Exception as e:
-        logger.exception("Unhandled exception during decoding.")
+        logger.exception(f"Unhandled exception during decoding. {e}")
         raise HTTPException(status_code=500, detail="Internal server error while decoding file.")
 
 
