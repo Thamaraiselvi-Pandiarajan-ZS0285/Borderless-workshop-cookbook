@@ -1,7 +1,10 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
+fastapi==0.115.12
+fastapi-cli==0.0.7
+uvicorn==0.34.2
+SQLAlchemy==2.0.35
 psycopg2-binary
 alembic
-python-dotenv
-pydantic
+python-dotenv==1.0.1
+pydantic==2.9.2
+
+reportlab~=4.4.1
