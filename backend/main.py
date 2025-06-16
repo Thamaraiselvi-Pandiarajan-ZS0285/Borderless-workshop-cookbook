@@ -3,8 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.config.db_config import POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME, POSTGRESQL_USER_NAME, \
-    POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
+from backend.config.db_config import *;
 from backend.db.db_helper.db_Initializer import DbInitializer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
