@@ -5,12 +5,14 @@ import uuid
 import mimetypes
 
 from contextlib import asynccontextmanager
-from pyexpat.errors import messages
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
+from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
@@ -136,3 +138,38 @@ async def decode_file(
         raise HTTPException(status_code=500, detail="Internal server error while decoding file.")
 
 
+
+
+@app.post("/api/paper-itemizer")
+async def do_paper_itemizer(request: PaperItemizerRequest):
+    logger.info("Received paper itemizer request for file: %s", request.file_name)
+
+    try:
+        paper_itemizer_object = PaperItemizer(
+            input=request.input,
+            file_name=request.file_name,
+            extension = request.file_extension
+        )
+
+        result = paper_itemizer_object.do_paper_itemizer()
+
+        logger.info("Successfully processed file: %s", request.file_name)
+        return build_paper_itemizer_response(result, 200, "Paper itemization successful.")
+
+    except base64.binascii.Error as decode_err:
+        logger.error("Base64 decoding failed for file %s: %s", request.file_name, str(decode_err), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 input. Decoding failed."
+        )
+
+    except HTTPException as http_ex:
+        logger.warning("HTTPException raised for file %s: %s", request.file_name, str(http_ex.detail), exc_info=True)
+        raise http_ex
+
+    except Exception as e:
+        logger.exception("Unexpected error while processing file %s: %s", request.file_name, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error occurred while processing the file."
+        )
