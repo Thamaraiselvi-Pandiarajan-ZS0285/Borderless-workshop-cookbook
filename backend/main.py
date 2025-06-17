@@ -23,7 +23,7 @@ from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
-from backend.db.db_helper.Dbutils import Dbutils
+from backend.db.db_helper.db_utils import Dbutils
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
