@@ -1,17 +1,23 @@
 import base64
-import json
 import logging
 import os
 import uuid
 import mimetypes
+import json
+
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
+from typing import Dict, Any
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
@@ -19,12 +25,10 @@ from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
+from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
-logger.info("FastAPI application initialized.")
 
 
 
@@ -55,6 +59,10 @@ async def lifespan(application: FastAPI):
             logger.info("Closing database connection...")
             application.state.db_engine.dispose()
             logger.info("Database connection closed.")
+
+app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}}, lifespan=lifespan)
+logger.info("FastAPI application initialized.")
+
 
 
 @app.get("/")
@@ -177,6 +185,53 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
         )
 
 
+@app.post("/api/convert/email-to-pdf")
+async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileResponse:
+    """
+    Convert a JSON-formatted email to a PDF document.
+
+    Args:
+        email_file (UploadFile): A JSON file containing email fields like subject, sender, received_at, etc.
+
+    Returns:
+        FileResponse: The generated PDF file.
+    """
+    try:
+        contents = await email_file.read()
+        email_data = json.loads(contents)
+
+        if not isinstance(email_data, dict):
+            raise ValueError("The uploaded JSON must be an object.")
+
+        file_utils = FilePathUtils(file=email_file, temp_dir=None)
+        output_dir = file_utils.file_dir()
+        os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
+        file_name = file_utils.get_file_name()
+        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+        pdf_converter = HTMLEmailToPDFConverter()
+        pdf_converter.convert_to_pdf(email_data, pdf_path)
+
+        logger.info(f"✅ PDF generated at: {pdf_path}")
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename="converted_email.pdf"
+        )
+
+    except JSONDecodeError:
+        logger.exception("❌ Uploaded file is not valid JSON.")
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid JSON object.")
+
+    except ValueError as ve:
+        logger.exception("❌ Validation error in uploaded email JSON.")
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    except Exception as e:
+        logger.exception("❌ Unexpected error during PDF conversion.")
+        raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
+
+
+
 @app.post("/api/classify-email")
 def do_classify(email: EmailClassificationRequest):
     try:
@@ -187,8 +242,57 @@ def do_classify(email: EmailClassificationRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
 
-    except json.JSONDecodeError:
+    except JSONDecodeError:
         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
+
+
+@app.post("api/extraction/metadata_extractor")
+async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
+    """
+    Accepts a list of email image inputs (either file path or base64 string),
+    extracts metadata using OCR and LLM, and returns the result per file.
+
+    Args:
+        request (EmailImageRequest): List of image items with `file_name`, `file_extension`, and `input` fields.
+
+    Returns:
+        dict: Extraction result or error per file in the `results` list.
+    """
+    results = []
+    ocr_agent = EmailOCRAgent()
+    base64_converter = FileToBase64()
+
+    for item in request.data:
+        try:
+            # Resolve image to base64 string
+            if os.path.exists(item.input):
+                base64_image = base64_converter.do_base64_encoding(item.input)
+            else:
+                if not item.input.startswith("data:image") and len(item.input) < 100:
+                    raise ValueError("Invalid base64 input or unreadable image path.")
+                base64_image = item.input
+            extracted_text = ocr_agent.extract_text_from_base64(base64_image)
+            try:
+                extracted_metadata = json.loads(extracted_text)
+            except json.JSONDecodeError as jde:
+                raise ValueError("OCR response is not valid JSON.") from jde
+
+            results.append({
+                "file_name": item.filename,
+                "file_extension": item.fileextension,
+                "extracted_metadata": extracted_metadata
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to extract metadata for {item.filename}: {e}", exc_info=True)
+            results.append({
+                "file_name": item.filename,
+                "file_extension": item.fileextension,
+                "error": str(e)
+            })
+
+    return {"results": results}
