@@ -1,9 +1,9 @@
 import base64
-import json
 import logging
 import os
 import uuid
 import mimetypes
+import json
 
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
@@ -32,9 +32,6 @@ logger.info("FastAPI application initialized.")
 
 
 
-# Ensure output directories exist
-os.makedirs("output", exist_ok=True)
-os.makedirs("output/images", exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
