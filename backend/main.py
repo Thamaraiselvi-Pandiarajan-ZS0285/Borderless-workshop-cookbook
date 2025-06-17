@@ -22,6 +22,7 @@ from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 from backend.app.core.pdf_to_image_converter import PdfToImageConverter
+from backend.app.core.embedder import Embedder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ async def decode_file(
     base64_string: str = Body(..., embed=True),
     file_name: str = Body("decoded_file", embed=True),
     extension: str = Body(".jpg", embed=True)
-):
+    ):
     try:
         base64_validator = Base64Utils.is_valid_base64(base64_string)
         if not base64_validator :
@@ -204,8 +205,11 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)):
 @app.post("/api/classify-email")
 def do_classify(email: EmailClassificationRequest):
     try:
-        processor = EmailClassifierProcessor()
-        result = processor.process_email(email.subject, email.body)
+        # processor = EmailClassifierProcessor()
+        # result = processor.process_email(email.subject, email.body)
+        # return result
+        embedder = Embedder()
+        result= embedder.ingest_email(email.subject, email.body)
         return result
 
     except ValueError as ve:
