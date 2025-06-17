@@ -4,7 +4,10 @@ import logging
 import os
 import uuid
 import mimetypes
+
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -19,6 +22,7 @@ from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
+from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,6 +32,9 @@ logger.info("FastAPI application initialized.")
 
 
 
+# Ensure output directories exist
+os.makedirs("output", exist_ok=True)
+os.makedirs("output/images", exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -177,6 +184,53 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
         )
 
 
+@app.post("/api/convert/email-to-pdf")
+async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileResponse:
+    """
+    Convert a JSON-formatted email to a PDF document.
+
+    Args:
+        email_file (UploadFile): A JSON file containing email fields like subject, sender, received_at, etc.
+
+    Returns:
+        FileResponse: The generated PDF file.
+    """
+    try:
+        contents = await email_file.read()
+        email_data = json.loads(contents)
+
+        if not isinstance(email_data, dict):
+            raise ValueError("The uploaded JSON must be an object.")
+
+        file_utils = FilePathUtils(file=email_file, temp_dir=None)
+        output_dir = file_utils.file_dir()
+        os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
+        file_name = file_utils.get_file_name()
+        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+        pdf_converter = HTMLEmailToPDFConverter()
+        pdf_converter.convert_to_pdf(email_data, pdf_path)
+
+        logger.info(f"✅ PDF generated at: {pdf_path}")
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename="converted_email.pdf"
+        )
+
+    except JSONDecodeError:
+        logger.exception("❌ Uploaded file is not valid JSON.")
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid JSON object.")
+
+    except ValueError as ve:
+        logger.exception("❌ Validation error in uploaded email JSON.")
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    except Exception as e:
+        logger.exception("❌ Unexpected error during PDF conversion.")
+        raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
+
+
+
 @app.post("/api/classify-email")
 def do_classify(email: EmailClassificationRequest):
     try:
@@ -187,8 +241,9 @@ def do_classify(email: EmailClassificationRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
 
-    except json.JSONDecodeError:
+    except JSONDecodeError:
         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
