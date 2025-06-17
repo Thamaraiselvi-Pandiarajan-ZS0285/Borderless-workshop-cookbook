@@ -6,7 +6,7 @@ psycopg2-binary
 alembic
 python-dotenv==1.0.1
 pydantic==2.9.2
-
+openai
 reportlab~=4.4.1
 beautifulsoup4~=4.12.3
 fpdf~=1.7.2
