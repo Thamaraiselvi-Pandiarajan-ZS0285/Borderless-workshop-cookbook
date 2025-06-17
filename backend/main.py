@@ -1,16 +1,18 @@
 import base64
+import json
 import logging
 import os
 import uuid
 import mimetypes
-import json
 
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI,Form, UploadFile, File, HTTPException, Body, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
+
+from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
@@ -181,7 +183,6 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
         )
 
 
-
 @app.post("/convert/email-to-pdf")
 async def convert_email_to_pdf(email_file: UploadFile = File(...)):
     try:
@@ -199,35 +200,20 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing email: {e}")
 
-@app.post("/convert/pdf-to-images")
-async def convert_pdf_to_images(pdf_file: UploadFile = File(...),source_type:str = Form("unknown")):
+
+@app.post("/api/classify-email")
+def do_classify(email: EmailClassificationRequest):
     try:
-        pdf_path = f"output/{pdf_file.filename}"
-        with open(pdf_path, "wb") as buffer:
-            buffer.write(await pdf_file.read())
+        processor = EmailClassifierProcessor()
+        result = processor.process_email(email.subject, email.body)
+        return result
 
-        image_converter = PdfToImageConverter()
-        image_paths = image_converter.convert(pdf_path, f"output/images/{pdf_file.filename}", 500,source_type)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
 
-        # Return list of image paths
-        return {
-            "message": f"{len(image_paths)} pages converted to images at 500 DPI",
-            "images": [f"output/images/{pdf_file.filename}/{os.path.basename(p)}" for p in image_paths],
-            "source_type": source_type
-        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error converting PDF: {e}")
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
-@app.get("/images/{image_name}")
-async def get_image(image_name: str):
-    image_path = f"output/images/{image_name}"
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(image_path)
-
-
-# For testing purposes only
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
