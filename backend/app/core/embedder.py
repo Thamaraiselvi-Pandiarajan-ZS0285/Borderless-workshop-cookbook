@@ -1,64 +1,81 @@
 import os
-import openai
-from backend.db.vector import sessionmaker, EmailChunk
+
+import numpy as np
+import torch
+from openai import AzureOpenAI
+from sqlalchemy import text
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql.functions import func
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+from backend.models.save_email_chunks import EmailChunk
 from backend.utils.tokenizer import split_text
-from sentence_transformers import CrossEncoder
-from backend.utils.memory import memory
+from dotenv import load_dotenv
 
-# Azure OpenAI setup
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
-openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
+load_dotenv()
 
-cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+#cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+tokenizer = AutoTokenizer.from_pretrained("cross-encoder/ms-marco-MiniLM-L-6-v2")
+model = AutoModelForSequenceClassification.from_pretrained("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
 
 class Embedder:
-    def __init__(self):
-        self.db = sessionmaker()
+    def __init__(self, db_engine:Engine,db_session:sessionmaker):
+        self.client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+        )
+        self.db_engin = db_engine
+        self.db_session = db_session
 
     def embed_text(self, text):
-        response = openai.Embedding.create(
-            engine=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
-            input=text
+        response = self.client.embeddings.create(
+            model="text-embedding-ada-002",
+            input=[text]
         )
-        return response['data'][0]['embedding']
+        return response.data[0].embedding
 
     def ingest_email(self, email_id, text):
         chunks = split_text(text)
         for chunk in chunks:
             emb = self.embed_text(chunk)
             record = EmailChunk(email_id=email_id, chunk_text=chunk, embedding=emb)
-            self.db.add(record)
-        self.db.commit()
+            with self.db_session() as session:
+                session.add(record)
+                session.commit()
+                session.refresh(record)
 
-    def search(self, query, top_k=5):
-        q_emb = self.embed_text(query)
-        result = self.db.execute(
-            f"""
-            SELECT id, chunk_text, embedding <-> :q_vec AS distance
-            FROM email_chunks
-            ORDER BY embedding <-> :q_vec
-            LIMIT :top_k
-            """,
-            {"q_vec": q_emb, "top_k": top_k * 4}
-        ).fetchall()
-        texts = [row[1] for row in result]
-        ranked = cross_encoder.predict([[query, t] for t in texts])
-        sorted_chunks = sorted(zip(texts, ranked), key=lambda x: x[1], reverse=True)
-        return [chunk for chunk, _ in sorted_chunks[:top_k]]
+    def semantic_search(self, query: str, limit: int = 20) -> list[dict]:
+        query_emb = self.embed_text(query)
+        session = self.db_session()
+        try:
+            results = (
+                session.query(
+                    EmailChunk.email_chunk_id,
+                    EmailChunk.chunk_text,
+                    func.l2_distance(EmailChunk.embedding, query_emb).label("distance")
+                )
+                .order_by("distance").limit(limit).all())
+        finally:
+            session.close()
 
-    def respond(self, session_id, query):
-        memory.add(session_id, f"User: {query}")
-        top_chunks = self.search(query)
-        prompt = "\n\n---\n\n".join(top_chunks + memory.get(session_id)[-5:])
-        completion = openai.ChatCompletion.create(
-            engine="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0
-        )
-        reply = completion.choices[0].message['content']
-        memory.add(session_id, f"Assistant: {reply}")
-        return reply
+        return [{"id": row[0], "text": row[1], "distance": row[2]} for row in result]
+
+    def rerank(self, query: str, docs: list[dict], top_k: int = 5) -> list[dict]:
+        pairs = [(query, doc["text"]) for doc in docs]
+        inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            scores = model(**inputs).logits.squeeze(-1)
+
+        ranked = sorted(zip(docs, scores), key=lambda x: x[1].item(), reverse=True)
+        return [doc for doc, _ in ranked[:top_k]]
+
+    def respond(self, query: str, top_k: int = 5) -> list[dict]:
+        semantically_similar = self.semantic_search(query, limit=top_k * 4)
+        top_chunks = self.rerank(query, semantically_similar, top_k=top_k)
+        return top_chunks
+

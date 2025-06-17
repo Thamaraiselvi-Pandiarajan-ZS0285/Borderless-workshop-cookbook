@@ -27,10 +27,6 @@ from backend.app.core.embedder import Embedder
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
-logger.info("FastAPI application initialized.")
-
-
 
 # Ensure output directories exist
 os.makedirs("output", exist_ok=True)
@@ -62,6 +58,10 @@ async def lifespan(application: FastAPI):
             logger.info("Closing database connection...")
             application.state.db_engine.dispose()
             logger.info("Database connection closed.")
+
+app = FastAPI(title="Borderless Access",lifespan=lifespan, swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
+logger.info("FastAPI application initialized.")
+
 
 
 @app.get("/")
@@ -208,10 +208,26 @@ def do_classify(email: EmailClassificationRequest):
         # processor = EmailClassifierProcessor()
         # result = processor.process_email(email.subject, email.body)
         # return result
-        embedder = Embedder()
+        embedder = Embedder(app.state.db_engine, app.state.db_session)
         result= embedder.ingest_email(email.subject, email.body)
         return result
 
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
+
+@app.post("/query")
+def query(question: str):
+    try:
+        embedder = Embedder(app.state.db_engine, app.state.db_session)
+        answer = embedder.respond(question)
+        return {"answer": answer}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
 
