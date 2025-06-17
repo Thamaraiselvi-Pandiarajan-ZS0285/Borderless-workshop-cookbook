@@ -3,7 +3,7 @@ from pdf2image import convert_from_path
 import os
 from backend.models.PDFToImageConverter import PDFToImageConverter
 
-class HighResPDFToImageConverter(PDFToImageConverter):
+class PdfToImageConverter(PDFToImageConverter):
     def convert(self, pdf_path, output_folder, dpi=500, source_type="unknown"):
         """
         Convert PDF to images and track source type.

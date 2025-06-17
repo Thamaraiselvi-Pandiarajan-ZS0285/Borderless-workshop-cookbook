@@ -1,10 +1,10 @@
 from jinja2 import Template, Environment, PackageLoader
 import pdfkit
-from ..models.EmailConverter import EmailConverter
+from backend.models.EmailConverter import EmailConverter
 import os
 
 class HTMLEmailToPDFConverter(EmailConverter):
-    def __init__(self, package_name="utils", template_dir="templates", template_name="EmailToPdfHtml_template.html"):
+    def __init__(self, package_name="backend", template_dir="utils/templates", template_name="EmailToPdfHtml_template.html"):
         self.env = Environment(
             loader=PackageLoader(package_name, template_dir)
         )

@@ -19,10 +19,18 @@ from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 
+from backend.app.core.EmailtoPdfConverter import HTMLEmailToPDFConverter
+from backend.app.core.PdfToImageConverter import PdfToImageConverter
 
-# Import converters
-from backend.utils.HTMLEmailToPDFConverter import HTMLEmailToPDFConverter
-from backend.utils.HighResPDFToImageConverter import HighResPDFToImageConverter
+import warnings
+from pydantic import ConfigDict
+
+# Suppress Pydantic protected namespace warnings
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="Field .* has conflict with protected namespace 'model_'"
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -209,7 +217,7 @@ async def convert_pdf_to_images(pdf_file: UploadFile = File(...),source_type:str
         with open(pdf_path, "wb") as buffer:
             buffer.write(await pdf_file.read())
 
-        image_converter = HighResPDFToImageConverter()
+        image_converter = PdfToImageConverter()
         image_paths = image_converter.convert(pdf_path, f"output/images/{pdf_file.filename}", 500,source_type)
 
         # Return list of image paths
@@ -228,6 +236,7 @@ async def get_image(image_name: str):
     if not os.path.exists(image_path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(image_path)
+
 
 # For testing purposes only
 if __name__ == "__main__":
