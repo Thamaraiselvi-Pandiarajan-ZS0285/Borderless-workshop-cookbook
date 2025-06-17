@@ -257,7 +257,7 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     extracts metadata using OCR and LLM, and returns the result per file.
 
     Args:
-        request (EmailImageRequest): List of image items with `filename`, `fileextension`, and `input` fields.
+        request (EmailImageRequest): List of image items with `file_name`, `file_extension`, and `input` fields.
 
     Returns:
         dict: Extraction result or error per file in the `results` list.
