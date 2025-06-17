@@ -1,16 +1,17 @@
 import base64
+import json
 import logging
 import os
 import uuid
 import mimetypes
-from fastapi import FastAPI, HTTPException
-from app.classifier_agent import process_email
-from models.emailRequest import EmailRequest
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
+
+from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
@@ -176,9 +177,18 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
         )
 
 
-@app.post("/classify_email")
-def classify(email: EmailRequest):
+@app.post("/api/classify-email")
+def do_classify(email: EmailClassificationRequest):
     try:
-     return process_email(email.subject, email.body)
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail={"error": str(e)})
+        processor = EmailClassifierProcessor()
+        result = processor.process_email(email.subject, email.body)
+        return result
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
