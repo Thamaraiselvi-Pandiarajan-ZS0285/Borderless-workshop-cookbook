@@ -1,49 +1,75 @@
-from jinja2 import  Environment, PackageLoader
-import pdfkit
 import os
+import logging
+from typing import Dict, Any
 from abc import ABC, abstractmethod
+
+from jinja2 import Environment, PackageLoader, Template
+import pdfkit
+
 from backend.utils.file_utils import FilePathUtils
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class EmailConverter(ABC):
     @abstractmethod
-    def convert_to_pdf(self, email_data, output_path):
+    def convert_to_pdf(self, email_data: Dict[str, Any], output_path: str) -> None:
+        """Abstract method to convert email data to PDF."""
         pass
 
+
 class HTMLEmailToPDFConverter(EmailConverter):
-    def __init__(self, package_name="backend", template_dir="utils/templates", template_name="EmailToPdfHtml_template.html"):
-        self.env = Environment(
-            loader=PackageLoader(package_name, template_dir)
-        )
-        self.template = self.env.get_template(template_name)
-
-
-    def convert_to_pdf(self, email_data, output_path):
-        # template = Template(self.TEMPLATE)
-        html = self.template.render(
-            subject=email_data["subject"],
-            sender=email_data["sender"],
-            received_at=email_data["received_at"],
-            body=email_data.get("body", ""),
-            attachments=email_data.get("attachments", [])
-        )
-
-        # Save as PDF
+    def __init__(
+            self,
+            package_name: str = "backend",
+            template_dir: str = "utils/templates",
+            template_name: str = "EmailToPdfHtml_template.html"
+    ) -> None:
+        """
+        Initialize the Jinja2 environment and load the HTML template.
+        """
         try:
-
-            file_utils = FilePathUtils(file=None, temp_dir=None)  #
-            output_dir = file_utils.file_dir()
-
-            # # Ensure output directory exists
-            # output_dir = os.path.dirname(output_path)
-            # os.makedirs(output_dir, exist_ok=True)
-
-            # Optional: Print debug info
-            print(f"Rendering HTML:\n{html[:500]}...")  # First 500 chars
-            print(f"Saving PDF to: {os.path.abspath(output_dir)}")
-
-            # Generate PDF
-            pdfkit.from_string(html, output_dir)
-            print("✅ PDF conversion completed.")
+            self.env: Environment = Environment(
+                loader=PackageLoader(package_name, template_dir)
+            )
+            self.template: Template = self.env.get_template(template_name)
+            logger.info("Email to PDF template loaded successfully.")
         except Exception as e:
-            print(f"❌ Error converting to PDF: {e}")
-            raise
+            logger.exception("Failed to initialize Jinja2 environment or load template.")
+            raise RuntimeError("Template loading failed") from e
+
+    def convert_to_pdf(self, email_data: Dict[str, Any], output_path: str) -> None:
+        """
+        Convert structured email data into a PDF file.
+
+        Args:
+            email_data (dict): Email metadata and body (subject, sender, received_at, etc.).
+            output_path (str): Target file path to save the resulting PDF.
+        """
+        try:
+            assert isinstance(email_data, dict), "email_data must be a dictionary"
+            assert isinstance(output_path, str), "output_path must be a string"
+
+            html: str = self.template.render(
+                subject=email_data.get("subject", ""),
+                sender=email_data.get("sender", ""),
+                received_at=email_data.get("received_at", ""),
+                body=email_data.get("body", ""),
+                attachments=email_data.get("attachments", [])
+            )
+
+            logger.debug(f"Rendered HTML preview (first 500 chars):\n{html[:500]}")
+
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            pdfkit.from_string(html, output_path)
+            logger.info(f"✅ PDF successfully saved at: {os.path.abspath(output_path)}")
+
+        except AssertionError as ae:
+            logger.error(f"Type assertion failed: {ae}")
+            raise ValueError(f"Invalid input: {ae}") from ae
+
+        except Exception as e:
+            logger.exception("❌ Failed to convert email to PDF.")
+            raise RuntimeError("Email to PDF conversion failed") from e
