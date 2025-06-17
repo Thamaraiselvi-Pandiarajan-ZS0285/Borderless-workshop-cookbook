@@ -3,8 +3,8 @@ import logging
 import os
 import uuid
 import mimetypes
-from fastapi import FastAPI
-from app.classifier_agent import classify_email
+from fastapi import FastAPI, HTTPException
+from app.classifier_agent import process_email
 from models.emailRequest import EmailRequest
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
@@ -175,7 +175,10 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
             detail="Unexpected error occurred while processing the file."
         )
 
+
 @app.post("/classify_email")
-def classify(email: EmailRequest) -> dict:
-    result = classify_email(email.subject, email.body)
-    return result
+def classify(email: EmailRequest):
+    try:
+     return process_email(email.subject, email.body)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
