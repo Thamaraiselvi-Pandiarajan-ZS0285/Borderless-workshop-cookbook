@@ -13,6 +13,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
+# from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
@@ -22,10 +23,14 @@ from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
+from backend.db.db_helper.Dbutils import Dbutils
 from backend.db.db_helper.db_Initializer import DbInitializer
+from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+
+# from backend.models.save_email_chunks import EmailChunk;
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -47,6 +52,20 @@ async def lifespan(application: FastAPI):
         application.state.db_engine = db_init.db_create_engin()
         application.state.db_session = db_init.db_create_session()
         logger.info("Database engine and session created successfully.")
+        logger.info("Initializing database helper...")
+        db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
+
+        logger.info("Creating all schemas...")
+        db_helper.create_all_schema()
+        logger.info("Schemas created successfully.")
+
+        logger.info("Creating all tables...")
+        db_helper.create_all_table()
+        db_helper.print_all_tables()
+        Base.metadata.create_all(application.state.db_engine)  # Create tables
+
+        logger.info("Tables created successfully.")
+
 
     except Exception as e:
         logger.error("Error during database initialization: %s", str(e), exc_info=True)
@@ -239,11 +258,10 @@ def do_classify(email: EmailClassificationRequest):
         result = processor.process_email(email.subject, email.body)
         return result
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
-
     except JSONDecodeError:
         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
@@ -296,3 +314,20 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
             })
 
     return {"results": results}
+
+#
+# @app.post("/query")
+# def query(question: str):
+#     try:
+#         embedder = Embedder(app.state.db_engine, app.state.db_session)
+#         answer = embedder.respond(question)
+#         return {"answer": answer}
+#     except ValueError as ve:
+#         raise HTTPException(status_code=400, detail={"error": str(ve)})
+#
+#     except json.JSONDecodeError:
+#         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+#
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+#
