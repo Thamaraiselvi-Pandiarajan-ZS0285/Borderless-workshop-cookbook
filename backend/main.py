@@ -7,14 +7,17 @@ import json
 
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
+from typing import Dict, Any
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
@@ -26,9 +29,6 @@ from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
-logger.info("FastAPI application initialized.")
 
 
 
@@ -59,6 +59,10 @@ async def lifespan(application: FastAPI):
             logger.info("Closing database connection...")
             application.state.db_engine.dispose()
             logger.info("Database connection closed.")
+
+app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}}, lifespan=lifespan)
+logger.info("FastAPI application initialized.")
+
 
 
 @app.get("/")
@@ -244,3 +248,51 @@ def do_classify(email: EmailClassificationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
+
+
+@app.post("api/extraction/metadata_extractor")
+async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
+    """
+    Accepts a list of email image inputs (either file path or base64 string),
+    extracts metadata using OCR and LLM, and returns the result per file.
+
+    Args:
+        request (EmailImageRequest): List of image items with `filename`, `fileextension`, and `input` fields.
+
+    Returns:
+        dict: Extraction result or error per file in the `results` list.
+    """
+    results = []
+    ocr_agent = EmailOCRAgent()
+    base64_converter = FileToBase64()
+
+    for item in request.data:
+        try:
+            # Resolve image to base64 string
+            if os.path.exists(item.input):
+                base64_image = base64_converter.do_base64_encoding(item.input)
+            else:
+                if not item.input.startswith("data:image") and len(item.input) < 100:
+                    raise ValueError("Invalid base64 input or unreadable image path.")
+                base64_image = item.input
+            extracted_text = ocr_agent.extract_text_from_base64(base64_image)
+            try:
+                extracted_metadata = json.loads(extracted_text)
+            except json.JSONDecodeError as jde:
+                raise ValueError("OCR response is not valid JSON.") from jde
+
+            results.append({
+                "file_name": item.filename,
+                "file_extension": item.fileextension,
+                "extracted_metadata": extracted_metadata
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to extract metadata for {item.filename}: {e}", exc_info=True)
+            results.append({
+                "file_name": item.filename,
+                "file_extension": item.fileextension,
+                "error": str(e)
+            })
+
+    return {"results": results}

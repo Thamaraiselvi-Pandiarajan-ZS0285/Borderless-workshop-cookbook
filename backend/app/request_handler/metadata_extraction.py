@@ -3,8 +3,8 @@ from typing import List
 
 class EmailImageInput(BaseModel):
     input: str
-    filename: str
-    fileextension: str
+    file_name: str
+    file_extension: str
 
 
 class EmailImageRequest(BaseModel):
