@@ -18,19 +18,8 @@ from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
-
-from backend.app.core.EmailtoPdfConverter import HTMLEmailToPDFConverter
-from backend.app.core.PdfToImageConverter import PdfToImageConverter
-
-import warnings
-from pydantic import ConfigDict
-
-# Suppress Pydantic protected namespace warnings
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    message="Field .* has conflict with protected namespace 'model_'"
-)
+from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.app.core.pdf_to_image_converter import PdfToImageConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

@@ -1,7 +1,13 @@
-from jinja2 import Template, Environment, PackageLoader
+from jinja2 import  Environment, PackageLoader
 import pdfkit
-from backend.models.EmailConverter import EmailConverter
 import os
+from abc import ABC, abstractmethod
+from backend.utils.file_utils import FilePathUtils
+
+class EmailConverter(ABC):
+    @abstractmethod
+    def convert_to_pdf(self, email_data, output_path):
+        pass
 
 class HTMLEmailToPDFConverter(EmailConverter):
     def __init__(self, package_name="backend", template_dir="utils/templates", template_name="EmailToPdfHtml_template.html"):
@@ -23,16 +29,20 @@ class HTMLEmailToPDFConverter(EmailConverter):
 
         # Save as PDF
         try:
-            # Ensure output directory exists
-            output_dir = os.path.dirname(output_path)
-            os.makedirs(output_dir, exist_ok=True)
+
+            file_utils = FilePathUtils(file=None, temp_dir=None)  #
+            output_dir = file_utils.file_dir()
+
+            # # Ensure output directory exists
+            # output_dir = os.path.dirname(output_path)
+            # os.makedirs(output_dir, exist_ok=True)
 
             # Optional: Print debug info
             print(f"Rendering HTML:\n{html[:500]}...")  # First 500 chars
-            print(f"Saving PDF to: {os.path.abspath(output_path)}")
+            print(f"Saving PDF to: {os.path.abspath(output_dir)}")
 
             # Generate PDF
-            pdfkit.from_string(html, output_path)
+            pdfkit.from_string(html, output_dir)
             print("✅ PDF conversion completed.")
         except Exception as e:
             print(f"❌ Error converting to PDF: {e}")
