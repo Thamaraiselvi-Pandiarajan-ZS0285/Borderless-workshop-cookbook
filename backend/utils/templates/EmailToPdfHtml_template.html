@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><title>{{ subject }}</title></head>
+<body>
+    <h1>{{ subject }}</h1>
+    <p><strong>From:</strong> {{ sender }}</p>
+    <p><strong>Date:</strong> {{ received_at }}</p>
+    <hr>
+    {{ body | safe }}
+    <hr>
+    <h3>Attachments:</h3> interest.</p>    <br><p>Best regards,<br>Procurement Department<br>Client Company Inc.</p></body></html>",
+
+    <ul>
+        {% for attachment in attachments %}
+            <li>{{ attachment.name }} ({{ attachment.content_type }})</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 import mimetypes
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
@@ -19,6 +20,8 @@ from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
+from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.app.core.pdf_to_image_converter import PdfToImageConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,6 +31,9 @@ logger.info("FastAPI application initialized.")
 
 
 
+# Ensure output directories exist
+os.makedirs("output", exist_ok=True)
+os.makedirs("output/images", exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -177,6 +183,24 @@ async def do_paper_itemizer(request: PaperItemizerRequest):
         )
 
 
+@app.post("/convert/email-to-pdf")
+async def convert_email_to_pdf(email_file: UploadFile = File(...)):
+    try:
+        contents = await email_file.read()
+        email_data = json.loads(contents)
+
+        base_name = os.path.splitext(email_file.filename)[0]
+        pdf_path = f"output/{base_name}.pdf"
+
+        pdf_converter = HTMLEmailToPDFConverter()
+        pdf_converter.convert_to_pdf(email_data, pdf_path)
+
+        return FileResponse(pdf_path, media_type='application/pdf', filename="converted_email.pdf")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing email: {e}")
+
+
 @app.post("/api/classify-email")
 def do_classify(email: EmailClassificationRequest):
     try:
@@ -192,3 +216,4 @@ def do_classify(email: EmailClassificationRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
