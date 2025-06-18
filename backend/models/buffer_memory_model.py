@@ -12,11 +12,14 @@ from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.config.db_config import *
 import asyncio
 
-Base = DeclarativeBase()
 db_init = DbInitializer(
             POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
             POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
         )
+
+class Base(DeclarativeBase):
+    pass
+
 
 # Define ORM model for message persistence
 class ChatMessage(Base):
