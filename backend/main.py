@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from backend.app.core.classifier_agent import EmailClassifierProcessor
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest
@@ -277,7 +278,7 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
     results = []
     ocr_agent = EmailOCRAgent()
-
+    validator_agent = MetadataValidatorAgent()
 
     for item in request.data:
         try:
@@ -289,23 +290,25 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
                 if not item.input.startswith("data:image") and len(item.input) < 100:
                     raise ValueError("Invalid base64 input or unreadable image path.")
                 base64_image = item.input
-            extracted_text = ocr_agent.extract_text_from_base64(base64_image)
+            extracted_text = ocr_agent.extract_text_from_base64(base64_image, item.category)
             cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
+            validation_result = validator_agent.validate_metadata(cleaned_json_string, item.category)
             try:
                 parsed_metadata = json.loads(cleaned_json_string)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Failed to parse JSON from extracted text: {e}")
-            results.append({
+                results.append({
                 "file_name": item.file_name,
                 "file_extension": item.file_extension,
-                "extracted_metadata": parsed_metadata
+                "extracted_metadata": parsed_metadata,
+                "validation_result": validation_result
             })
 
         except Exception as e:
-            logger.error(f"Failed to extract metadata for {item.filename}: {e}", exc_info=True)
+            logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
             results.append({
-                "file_name": item.filename,
-                "file_extension": item.fileextension,
+                "file_name": item.file_name,
+                "file_extension": item.file_extension,
                 "error": str(e)
             })
 
