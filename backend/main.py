@@ -4,8 +4,7 @@ import os
 import uuid
 import mimetypes
 import json
-
-from contextlib import asynccontextmanager
+import re
 from json import JSONDecodeError
 from typing import Dict, Any
 
@@ -38,48 +37,48 @@ logger = logging.getLogger(__name__)
 
 
 
-@asynccontextmanager
-async def lifespan(application: FastAPI):
-    logger.info("Starting application lifespan...")
+# @asynccontextmanager
+# async def lifespan(application: FastAPI):
+#     logger.info("Starting application lifespan...")
+#
+#     try:
+#         logger.info("Initializing database connection...")
+#         db_init = DbInitializer(
+#             POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
+#             POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
+#         )
+#
+#         application.state.db_engine = db_init.db_create_engin()
+#         application.state.db_session = db_init.db_create_session()
+#         logger.info("Database engine and session created successfully.")
+#         logger.info("Initializing database helper...")
+#         db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
+#
+#         logger.info("Creating all schemas...")
+#         db_helper.create_all_schema()
+#         logger.info("Schemas created successfully.")
+#
+#         logger.info("Creating all tables...")
+#         db_helper.create_all_table()
+#         db_helper.print_all_tables()
+#         Base.metadata.create_all(application.state.db_engine)  # Create tables
+#
+#         logger.info("Tables created successfully.")
+#
+#
+#     except Exception as e:
+#         logger.error("Error during database initialization: %s", str(e), exc_info=True)
+#         raise
+#
+#     try:
+#         yield
+#     finally:
+#         if hasattr(application.state, "db_engine"):
+#             logger.info("Closing database connection...")
+#             application.state.db_engine.dispose()
+#             logger.info("Database connection closed.")
 
-    try:
-        logger.info("Initializing database connection...")
-        db_init = DbInitializer(
-            POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
-            POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
-        )
-
-        application.state.db_engine = db_init.db_create_engin()
-        application.state.db_session = db_init.db_create_session()
-        logger.info("Database engine and session created successfully.")
-        logger.info("Initializing database helper...")
-        db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
-
-        logger.info("Creating all schemas...")
-        db_helper.create_all_schema()
-        logger.info("Schemas created successfully.")
-
-        logger.info("Creating all tables...")
-        db_helper.create_all_table()
-        db_helper.print_all_tables()
-        Base.metadata.create_all(application.state.db_engine)  # Create tables
-
-        logger.info("Tables created successfully.")
-
-
-    except Exception as e:
-        logger.error("Error during database initialization: %s", str(e), exc_info=True)
-        raise
-
-    try:
-        yield
-    finally:
-        if hasattr(application.state, "db_engine"):
-            logger.info("Closing database connection...")
-            application.state.db_engine.dispose()
-            logger.info("Database connection closed.")
-
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}}, lifespan=lifespan)
+app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
 logger.info("FastAPI application initialized.")
 
 
@@ -250,25 +249,21 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
 
-
 @app.post("/api/classify-email")
 def do_classify(email: EmailClassificationRequest):
     try:
         processor = EmailClassifierProcessor()
-        result = processor.process_email(email.subject, email.body)
-        return result
+        return processor.process_email(email.subject, email.body)
 
     except JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+        raise HTTPException(status_code=500, detail={"error": "Invalid LLM response"})
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "Internal error", "details": str(e)})
 
 
-
-@app.post("api/extraction/metadata_extractor")
+@app.post("/api/extraction/metadata_extractor")
 async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
     Accepts a list of email image inputs (either file path or base64 string),
@@ -282,27 +277,28 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
     results = []
     ocr_agent = EmailOCRAgent()
-    base64_converter = FileToBase64()
+
 
     for item in request.data:
         try:
             # Resolve image to base64 string
             if os.path.exists(item.input):
-                base64_image = base64_converter.do_base64_encoding(item.input)
+                base64_converter = FileToBase64(item.input)
+                base64_image = base64_converter.do_base64_encoding()
             else:
                 if not item.input.startswith("data:image") and len(item.input) < 100:
                     raise ValueError("Invalid base64 input or unreadable image path.")
                 base64_image = item.input
             extracted_text = ocr_agent.extract_text_from_base64(base64_image)
+            cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
             try:
-                extracted_metadata = json.loads(extracted_text)
-            except json.JSONDecodeError as jde:
-                raise ValueError("OCR response is not valid JSON.") from jde
-
+                parsed_metadata = json.loads(cleaned_json_string)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse JSON from extracted text: {e}")
             results.append({
-                "file_name": item.filename,
-                "file_extension": item.fileextension,
-                "extracted_metadata": extracted_metadata
+                "file_name": item.file_name,
+                "file_extension": item.file_extension,
+                "extracted_metadata": parsed_metadata
             })
 
         except Exception as e:
