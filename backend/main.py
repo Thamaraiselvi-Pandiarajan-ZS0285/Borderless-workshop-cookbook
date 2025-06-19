@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import re
 import uuid
 import mimetypes
 import json
@@ -20,13 +21,12 @@ from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
-from backend.config.db_config import *
-from backend.db.db_helper.db_utils import Dbutils
-from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
+from backend.app.core.summarization_agent import SummarizationAgent
+from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
@@ -37,20 +37,25 @@ logger = logging.getLogger(__name__)
 
 
 
-
 # @asynccontextmanager
 # async def lifespan(application: FastAPI):
 #     logger.info("Starting application lifespan...")
 #
 #     try:
 #         logger.info("Initializing database connection...")
-#         db_init = DbInitializer(
-#             POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
-#             POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
-#         )
 #
-#         application.state.db_engine = db_init.db_create_engin()
-#         application.state.db_session = db_init.db_create_session()
+#         # db_init = DbInitializer(
+#         #     POSTGRESQL_DRIVER_NAME,
+#         #     POSTGRESQL_HOST,
+#         #     POSTGRESQL_DB_NAME,
+#         #     POSTGRESQL_USER_NAME,
+#         #     POSTGRESQL_PASSWORD,
+#         #     POSTGRESQL_PORT_NO
+#         # )
+#
+#         # application.state.db_engine = db_init.db_create_engin()
+#         # application.state.db_session = db_init.db_create_session()
+#
 #         logger.info("Database engine and session created successfully.")
 #         logger.info("Initializing database helper...")
 #         db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
@@ -249,19 +254,47 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         logger.exception("❌ Unexpected error during PDF conversion.")
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
-
-@app.post("/api/classify-email")
+@app.post("/api/classify_email")
 def do_classify(email: EmailClassificationRequest):
+
     try:
         processor = EmailClassifierProcessor()
-        return processor.process_email(email.subject, email.body)
+        summarizer = SummarizationAgent()
+        extractor = AttachmentExtractor()
+
+        full_body = email.body
+        final_summary:str=""
+
+        if email.hasAttachments:
+            # Step 1: Extract raw attachment content
+            attachment_content = extractor.extract_many(email.attachments)
+
+            # Step 2: Split into page-wise chunks
+            pages = split_into_pages(attachment_content)
+
+            # Step 3: Summarize each page individually
+            page_summaries = []
+            for idx, page in enumerate(pages):
+                summary = summarizer.summarize_text(page)
+                page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
+
+            # Step 4: Generate final summary from all page summaries
+            combined_summaries_text = "\n\n".join(page_summaries)
+            final_summary = summarizer.summarize_text(combined_summaries_text)
+
+            # Step 5: Append final summary to the body
+            full_body += "Attachment Summary\n\n" + final_summary
+
+        # Step 6: Process classification
+        email_classification = processor.process_email(email.subject, full_body)
+        return build_email_classifier_response(email,email_classification,final_summary)
 
     except JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid LLM response"})
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal error", "details": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
 
 @app.post("/api/extraction/metadata_extractor")
