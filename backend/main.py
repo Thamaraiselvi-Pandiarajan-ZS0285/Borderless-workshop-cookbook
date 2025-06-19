@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import re
 import uuid
 import mimetypes
 import json
@@ -20,22 +21,18 @@ from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
-from backend.config.db_config import *
-from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
-from backend.db.db_helper.db_utils import Dbutils
-from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
+from backend.app.core.summarization_agent import SummarizationAgent
+from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
-# from backend.models.save_email_chunks import EmailChunk;
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
 
 
 
@@ -45,13 +42,19 @@ logger = logging.getLogger(__name__)
 #
 #     try:
 #         logger.info("Initializing database connection...")
-#         db_init = DbInitializer(
-#             POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
-#             POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
-#         )
 #
-#         application.state.db_engine = db_init.db_create_engin()
-#         application.state.db_session = db_init.db_create_session()
+#         # db_init = DbInitializer(
+#         #     POSTGRESQL_DRIVER_NAME,
+#         #     POSTGRESQL_HOST,
+#         #     POSTGRESQL_DB_NAME,
+#         #     POSTGRESQL_USER_NAME,
+#         #     POSTGRESQL_PASSWORD,
+#         #     POSTGRESQL_PORT_NO
+#         # )
+#
+#         # application.state.db_engine = db_init.db_create_engin()
+#         # application.state.db_session = db_init.db_create_session()
+#
 #         logger.info("Database engine and session created successfully.")
 #         logger.info("Initializing database helper...")
 #         db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
@@ -250,19 +253,47 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         logger.exception("❌ Unexpected error during PDF conversion.")
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
-
-@app.post("/api/classify-email")
+@app.post("/api/classify_email")
 def do_classify(email: EmailClassificationRequest):
+
     try:
         processor = EmailClassifierProcessor()
-        return processor.process_email(email.subject, email.body)
+        summarizer = SummarizationAgent()
+        extractor = AttachmentExtractor()
+
+        full_body = email.body
+        final_summary:str=""
+
+        if email.hasAttachments:
+            # Step 1: Extract raw attachment content
+            attachment_content = extractor.extract_many(email.attachments)
+
+            # Step 2: Split into page-wise chunks
+            pages = split_into_pages(attachment_content)
+
+            # Step 3: Summarize each page individually
+            page_summaries = []
+            for idx, page in enumerate(pages):
+                summary = summarizer.summarize_text(page)
+                page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
+
+            # Step 4: Generate final summary from all page summaries
+            combined_summaries_text = "\n\n".join(page_summaries)
+            final_summary = summarizer.summarize_text(combined_summaries_text)
+
+            # Step 5: Append final summary to the body
+            full_body += "Attachment Summary\n\n" + final_summary
+
+        # Step 6: Process classification
+        email_classification = processor.process_email(email.subject, full_body)
+        return build_email_classifier_response(email,email_classification,final_summary)
 
     except JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid LLM response"})
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal error", "details": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
 
 @app.post("/api/extraction/metadata_extractor")
@@ -332,45 +363,3 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 #
-
-@app.post("/api/all-in-one")
-async def test(email_file: EmailClassificationRequest):
-    results = {}
-
-    try:
-        email_data = email_file.model_dump()
-
-        if not isinstance(email_data, dict):
-            raise ValueError("The uploaded JSON must be an object.")
-
-        file_utils = FilePathUtils(file=None, temp_dir=None)
-        output_dir = file_utils.file_dir()
-        os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
-        file_name = str(uuid.uuid4())
-        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
-        pdf_converter = HTMLEmailToPDFConverter()
-        pdf_converter.convert_to_pdf(email_data, pdf_path)
-        base64_encoder = FileToBase64(pdf_path)
-        encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-
-
-        paper_itemizer_object = PaperItemizer(
-            input=encoded_data,
-            file_name=file_name,
-            extension=DEFAULT_IMAGE_FORMAT
-        )
-
-        result = paper_itemizer_object.do_paper_itemizer()
-
-        # Email classification from json
-        processor = EmailClassifierProcessor()
-        classification_result = processor.process_email(email_file.subject, email_file.body)
-        results["classification"] = classification_result
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
-
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})

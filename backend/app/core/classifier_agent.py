@@ -4,8 +4,9 @@ import tiktoken
 from autogen import AssistantAgent
 from dotenv import load_dotenv
 
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.config.dev_config import MAX_INPUT_TOKEN, TEMPERATURE, AZURE_API_TYPE, EMAIL_CLASSIFIER_AGENT_NAME, \
-    VALIDATOR_AGENT_NAME, CONFIDENCE_AGENT_NAME, TIGGER_REASON_AGENT_NAME, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT
+    VALIDATOR_AGENT_NAME, CONFIDENCE_AGENT_NAME, TIGGER_REASON_AGENT_NAME
 from backend.prompts.confidence_prompt import CONFIDENCE_PROMPT
 from backend.prompts.validator_prompt import VALIDATION_PROMPT
 from backend.prompts.emailclassifer_prompt import CLASSIFICATION_PROMPT
@@ -16,16 +17,16 @@ class EmailClassifierProcessor:
     def __init__(self):
         load_dotenv()
 
-        self.model_name = AZURE_OPENAI_DEPLOYMENT
+        self.model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
         self.max_input_tokens = MAX_INPUT_TOKEN
 
         self.llm_config = {
             "config_list": [{
                 "model": self.model_name,
                 "api_type": AZURE_API_TYPE,
-                "api_key": AZURE_OPENAI_API_KEY,
-                "base_url": AZURE_OPENAI_ENDPOINT,
-                "api_version": AZURE_OPENAI_API_VERSION
+                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+                "base_url": os.getenv("AZURE_OPENAI_ENDPOINT"),
+                "api_version": os.getenv("AZURE_OPENAI_API_VERSION")
             }],
             "temperature": TEMPERATURE,
         }
@@ -77,7 +78,8 @@ class EmailClassifierProcessor:
         except Exception:
             return 0.0
 
-    def get_trigger_reason(self, subject: str, body: str, classification: str, confidence: float, validation: str) -> str:
+    def get_trigger_reason(self, subject: str, body: str, classification: str, confidence: float,
+                           validation: str) -> str:
         message = f"""Subject: {subject}
                 Body: {body}
                 Classification: {classification}
@@ -90,16 +92,14 @@ class EmailClassifierProcessor:
         except Exception:
             return "Reason could not be determined due to an internal error."
 
-    def trigger_message(self, subject: str, body: str, classification: str, confidence: float, validation: str = "Invalid") -> dict:
+    def trigger_message(self, subject: str, body: str, classification: str, confidence: float,
+                        validation: str = "Invalid") -> str:
         reason = self.get_trigger_reason(subject, body, classification, confidence, validation)
-        return {
-            "status": "Escalation triggered",
-            "reason": reason,
-            "classification": classification,
-            "confidence": confidence
-        }
+        trigger_message_status=f"Message Triggered,Reason {reason}"
+        return trigger_message_status
 
-    def process_email(self, subject: str, body: str) -> dict:
+
+    def process_email(self, subject: str, body: str) -> str:
         combined_input = f"Subject: {subject}\n\nBody: {body}"
         truncated_input, was_truncated = self._truncate_to_max_tokens(combined_input)
 
@@ -113,8 +113,4 @@ class EmailClassifierProcessor:
         if validation == "Invalid" and confidence < 95 and classification.lower() == "unclear":
             return self.trigger_message(subject, body, classification, confidence, validation)
 
-        return {
-            "classification": classification,
-            "validation": validation,
-            "confidence": confidence
-        }
+        return classification
