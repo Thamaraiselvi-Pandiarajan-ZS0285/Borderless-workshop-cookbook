@@ -295,14 +295,15 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
             validation_result = validator_agent.validate_metadata(cleaned_json_string, item.category)
             try:
                 parsed_metadata = json.loads(cleaned_json_string)
+                results.append({
+                    "file_name": item.file_name,
+                    "file_extension": item.file_extension,
+                    "extracted_metadata": parsed_metadata,
+                    "validation_result": validation_result
+                })
             except json.JSONDecodeError as e:
                 raise ValueError(f"Failed to parse JSON from extracted text: {e}")
-                results.append({
-                "file_name": item.file_name,
-                "file_extension": item.file_extension,
-                "extracted_metadata": parsed_metadata,
-                "validation_result": validation_result
-            })
+
 
         except Exception as e:
             logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
