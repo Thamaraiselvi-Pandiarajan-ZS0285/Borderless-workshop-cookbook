@@ -15,3 +15,11 @@ class EmailClassificationRequest(BaseModel):
     body: str
     hasAttachments:bool
     attachments: Optional[List[Attachment]] = []
+
+class EmailClassifyImageInput(BaseModel):
+    input_path: str
+    file_name: str
+    file_extension: str
+
+class EmailClassifyImageRequest(BaseModel):
+    data: List[EmailClassifyImageInput]

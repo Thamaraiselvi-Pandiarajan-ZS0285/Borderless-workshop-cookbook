@@ -20,7 +20,7 @@ from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.email_classifier_response import build_email_classifier_response
@@ -309,6 +309,26 @@ def do_classify(email: EmailClassificationRequest):
         raise HTTPException(status_code=400, detail={"error": str(ve)})
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
+
+@app.post("/api/classify_email_vlm")
+def do_classify_via_vlm(emailimage: EmailClassifyImageRequest):
+    classifier = EmailClassifierProcessor()
+    for item in emailimage.data:
+        try:
+            # Resolve image to base64 string
+            if os.path.exists(item.input_path):
+                base64_converter = FileToBase64(item.input_path)
+                base64_image = base64_converter.do_base64_encoding()
+            else:
+                if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
+                    raise ValueError("Invalid base64 input or unreadable image path.")
+                base64_image = item.input_path
+            extracted_text = classifier.classify_via_vlm(base64_image)
+            return extracted_text
+        except Exception as e:
+            logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
+    return None
 
 
 @app.post("/api/extraction/metadata_extractor")
