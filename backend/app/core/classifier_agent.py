@@ -3,8 +3,6 @@ import os
 import tiktoken
 from autogen import AssistantAgent
 from dotenv import load_dotenv
-
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.config.dev_config import MAX_INPUT_TOKEN, TEMPERATURE, AZURE_API_TYPE, EMAIL_CLASSIFIER_AGENT_NAME, \
     VALIDATOR_AGENT_NAME, CONFIDENCE_AGENT_NAME, TIGGER_REASON_AGENT_NAME
 from backend.prompts.confidence_prompt import CONFIDENCE_PROMPT

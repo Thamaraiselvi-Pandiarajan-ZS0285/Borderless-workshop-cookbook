@@ -1,0 +1,17 @@
+trigger: none 
+
+pool:
+  name: Default  
+  demands:
+    - agent.name -equals bap-agent  
+
+steps:
+- script: |
+    python --version
+    pip --version
+  displayName: 'Check Python and Pip Version'
+
+- script: |
+    pip install --upgrade pip
+    pip install -r backend/requirements.txt
+  displayName: 'Install Python Dependencies'
