@@ -58,3 +58,4 @@ class MetadataExtractionJsonEmbedding(Base):
     created_on: Mapped[datetime] = mapped_column(
         server_default=func.now()
     )
+

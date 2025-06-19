@@ -20,6 +20,7 @@ from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.core.user_query_handler import UserQueryAgent
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
@@ -454,3 +455,10 @@ async def test(email_file: EmailClassificationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
+@app.post("/api/query-input")
+async def user_query(user_query: str):
+    user = UserQueryAgent()
+    result = user.query_decomposition(user_query)
+
+    embedder = Embedder(app.state.db_engine, app.state.db_session)
+    query_embedding_result = embedder.embed_text(result)
