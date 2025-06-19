@@ -4,7 +4,7 @@ import os
 import uuid
 import mimetypes
 import json
-
+import uvicorn
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
@@ -29,7 +29,8 @@ from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
-
+from backend.app.core.orchestrator_agent import Orchestrator,GroupChatManager, GroupChat
+from backend.app.request_handler.orchestrator_protocol import OrchestrateRequest
 # from backend.models.save_email_chunks import EmailChunk;
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -314,6 +315,35 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
             })
 
     return {"results": results}
+
+@app.post("/orchestrate")
+def orchestrate(request:OrchestrateRequest):
+    """
+       Gets Query from the user to trigger the workflow
+
+       Args:
+           request: Message (UserQuery)
+
+       Returns:
+
+       """
+    orch = Orchestrator()
+    orch._initialize_agents()
+    group_chat: GroupChat = orch.create_group_chat()
+    manager = orch.create_group_chat_manager(group_chat)
+    if not request.message:
+        raise HTTPException(status_code=400, detail="Message is required")
+    try:
+        result = orch.orchestrator_agent.initiate_chat(manager,message= request)
+        logger.info(result)
+        return {
+            "response": group_chat.messages[-1]["content"]
+        }
+    except Exception as e:
+        raise e
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 #
 # @app.post("/query")
