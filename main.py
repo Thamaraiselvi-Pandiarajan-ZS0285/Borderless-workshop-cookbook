@@ -249,6 +249,12 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         logger.exception("❌ Unexpected error during PDF conversion.")
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
+@app.post("/api/execute")
+def execute(email: EmailClassificationRequest):
+    email = email_generation()
+    cllssemail = email_classification(email)
+    persistence(clas)
+    #retrieval_agent()
 
 
 @app.post("/api/classify-email")

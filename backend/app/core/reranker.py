@@ -1,4 +1,6 @@
+from langchain_core.prompts import PromptTemplate
 from openai import AzureOpenAI
+from backend.prompts.reranker_prompt import RERANK_PROMPT
 
 from backend.config.dev_config import (
     AZURE_OPENAI_API_KEY,
@@ -16,14 +18,18 @@ class Reranker:
         )
 
     def rerank(self, query: str, results: list[dict]) -> list[dict]:
-        prompt = f"""
-You are given the following query: "{query}"
-And the following retrieved results:\n{[r['content'] for r in results]}
-Rank these by relevance and return them with scores.
-"""
+        reranker_prompt = PromptTemplate(
+            template=RERANK_PROMPT,
+            input_variables=["query", "passages"]
+        )
+
+        user_prompt = reranker_prompt.format(query=query, passages = results)
+
+        print(user_prompt)
+
         response = self.client.chat.completions.create(
             model=AZURE_OPENAI_DEPLOYMENT,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": user_prompt}]
         )
         # Simulate score assignment
         ranked = sorted(results, key=lambda x: x['score'], reverse=True)

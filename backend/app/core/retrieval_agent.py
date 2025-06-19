@@ -1,6 +1,7 @@
 from backend.app.core.query_decomposer import QueryDecomposer
 from backend.app.core.retriever import Retriever
 from openai import AzureOpenAI
+from sqlalchemy.orm import sessionmaker
 
 from backend.config.dev_config import (
     AZURE_OPENAI_API_KEY,
@@ -10,9 +11,9 @@ from backend.config.dev_config import (
 )
 
 class RetrievalAgent:
-    def __init__(self):
+    def __init__(self, db_session:sessionmaker):
         self.decomposer = QueryDecomposer()
-        self.retriever = Retriever()
+        self.retriever = Retriever(db_session)
         self.client = AzureOpenAI(
             api_key=AZURE_OPENAI_API_KEY,
             api_version=AZURE_OPENAI_API_VERSION,
@@ -20,6 +21,7 @@ class RetrievalAgent:
         )
 
     def answer(self, query: str) -> str:
+        print(query)
         subqueries = self.decomposer.decompose(query)
         full_context = ""
         for sq in subqueries:
