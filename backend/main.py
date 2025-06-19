@@ -23,6 +23,7 @@ from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
+from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.db.db_helper.db_utils import Dbutils
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.models.all_db_models import Base
@@ -331,3 +332,45 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 #
+
+@app.post("/api/all-in-one")
+async def test(email_file: EmailClassificationRequest):
+    results = {}
+
+    try:
+        email_data = email_file.model_dump()
+
+        if not isinstance(email_data, dict):
+            raise ValueError("The uploaded JSON must be an object.")
+
+        file_utils = FilePathUtils(file=None, temp_dir=None)
+        output_dir = file_utils.file_dir()
+        os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
+        file_name = str(uuid.uuid4())
+        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+        pdf_converter = HTMLEmailToPDFConverter()
+        pdf_converter.convert_to_pdf(email_data, pdf_path)
+        base64_encoder = FileToBase64(pdf_path)
+        encoded_data = base64_encoder.do_base64_encoding_by_file_path()
+
+
+        paper_itemizer_object = PaperItemizer(
+            input=encoded_data,
+            file_name=file_name,
+            extension=DEFAULT_IMAGE_FORMAT
+        )
+
+        result = paper_itemizer_object.do_paper_itemizer()
+
+        # Email classification from json
+        processor = EmailClassifierProcessor()
+        classification_result = processor.process_email(email_file.subject, email_file.body)
+        results["classification"] = classification_result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})

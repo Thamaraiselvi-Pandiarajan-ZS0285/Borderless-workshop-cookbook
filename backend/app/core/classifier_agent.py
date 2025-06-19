@@ -5,7 +5,7 @@ from autogen import AssistantAgent
 from dotenv import load_dotenv
 
 from backend.config.dev_config import MAX_INPUT_TOKEN, TEMPERATURE, AZURE_API_TYPE, EMAIL_CLASSIFIER_AGENT_NAME, \
-    VALIDATOR_AGENT_NAME, CONFIDENCE_AGENT_NAME, TIGGER_REASON_AGENT_NAME
+    VALIDATOR_AGENT_NAME, CONFIDENCE_AGENT_NAME, TIGGER_REASON_AGENT_NAME, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT
 from backend.prompts.confidence_prompt import CONFIDENCE_PROMPT
 from backend.prompts.validator_prompt import VALIDATION_PROMPT
 from backend.prompts.emailclassifer_prompt import CLASSIFICATION_PROMPT
@@ -16,16 +16,16 @@ class EmailClassifierProcessor:
     def __init__(self):
         load_dotenv()
 
-        self.model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        self.model_name = AZURE_OPENAI_DEPLOYMENT
         self.max_input_tokens = MAX_INPUT_TOKEN
 
         self.llm_config = {
             "config_list": [{
                 "model": self.model_name,
                 "api_type": AZURE_API_TYPE,
-                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                "base_url": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                "api_version": os.getenv("AZURE_OPENAI_API_VERSION")
+                "api_key": AZURE_OPENAI_API_KEY,
+                "base_url": AZURE_OPENAI_ENDPOINT,
+                "api_version": AZURE_OPENAI_API_VERSION
             }],
             "temperature": TEMPERATURE,
         }
