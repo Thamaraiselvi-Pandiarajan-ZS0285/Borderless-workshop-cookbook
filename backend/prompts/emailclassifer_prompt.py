@@ -10,9 +10,10 @@ Your task is to classify the email into one of the following categories:
 - "Rejection" – The email communicates that a proposal or submission was not selected. It may include polite decline language, regrets, or suggestions for future opportunities. Common phrases: we regret to inform you, unfortunately, not selected, thank you for your submission.
 
 Instructions:
-Read the entire email content carefully.
-Do not rely only on keywords—use context and tone to make an accurate decision.
-Ignore irrelevant parts such as greetings, footers, or signatures unless they add meaningful context.
-Respond with only one label: "RFP", "Winning", or "Rejection"—no extra words or explanations.
-If the email does not clearly fit any of these categories, respond with "Unclear".
+1. Focus primarily on the **email body** to make your classification decision.
+2. If the **body does not contain enough information**, refer to the **attachment summary** for additional context.
+3. Do not rely solely on keywords—consider the tone, intent, and context of the message.
+4. Ignore irrelevant sections such as greetings, footers, or signatures unless they contribute meaningful content.
+5. Respond with exactly one of the following labels: "RFP", "Winning", "Rejection", or "Unclear".
+6. Do not include any explanations or additional text—return only the label.
 """

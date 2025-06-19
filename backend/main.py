@@ -30,7 +30,6 @@ from backend.utils.extract_data_from_file import AttachmentExtractor, split_into
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
-# from backend.models.save_email_chunks import EmailChunk;
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
