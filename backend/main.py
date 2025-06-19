@@ -24,6 +24,7 @@ from backend.app.response_handler.email_classifier_response import build_email_c
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
+from backend.prompts.summarization_prompt import TASK_VARIANTS
 from backend.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
 from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
@@ -262,7 +263,8 @@ def do_classify(email: EmailClassificationRequest):
         extractor = AttachmentExtractor()
 
         full_body = email.body
-        final_summary:str=""
+        attachment_summary:str=""
+        email_and_attachment_summary:str=""
 
         if email.hasAttachments:
             # Step 1: Extract raw attachment content
@@ -279,14 +281,18 @@ def do_classify(email: EmailClassificationRequest):
 
             # Step 4: Generate final summary from all page summaries
             combined_summaries_text = "\n\n".join(page_summaries)
-            final_summary = summarizer.summarize_text(combined_summaries_text)
+            attachment_summary = summarizer.summarize_text(combined_summaries_text)
 
-            # Step 5: Append final summary to the body
-            full_body += "Attachment Summary\n\n" + final_summary
-
+        # Step 5: Append final summary to the body
+        full_body += "Attachment Summary\n\n" + attachment_summary
         # Step 6: Process classification
         email_classification = processor.process_email(email.subject, full_body)
-        return build_email_classifier_response(email,email_classification,final_summary)
+
+        for label, variant in TASK_VARIANTS.items():
+            summary_response = summarizer.summarize_text(full_body, variant)
+            email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+
+        return build_email_classifier_response(email,email_classification,email_and_attachment_summary)
 
     except JSONDecodeError:
         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
