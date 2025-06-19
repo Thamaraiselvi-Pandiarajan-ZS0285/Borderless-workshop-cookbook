@@ -416,3 +416,4 @@ async def test(email_file: EmailClassificationRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
