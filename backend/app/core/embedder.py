@@ -57,7 +57,6 @@ class Embedder:
 
     def minify_json(self,json_input):
         try:
-            # If input is a string, load it as JSON
             if isinstance(json_input, str):
                 parsed = json.loads(json_input)
             else:

@@ -45,54 +45,54 @@ logger = logging.getLogger(__name__)
 
 
 
-# @asynccontextmanager
-# async def lifespan(application: FastAPI):
-#     logger.info("Starting application lifespan...")
-#
-#     try:
-#         logger.info("Initializing database connection...")
-#
-#         # db_init = DbInitializer(
-#         #     POSTGRESQL_DRIVER_NAME,
-#         #     POSTGRESQL_HOST,
-#         #     POSTGRESQL_DB_NAME,
-#         #     POSTGRESQL_USER_NAME,
-#         #     POSTGRESQL_PASSWORD,
-#         #     POSTGRESQL_PORT_NO
-#         # )
-#
-#         # application.state.db_engine = db_init.db_create_engin()
-#         # application.state.db_session = db_init.db_create_session()
-#
-#         logger.info("Database engine and session created successfully.")
-#         logger.info("Initializing database helper...")
-#         db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
-#
-#         logger.info("Creating all schemas...")
-#         db_helper.create_all_schema()
-#         logger.info("Schemas created successfully.")
-#
-#         logger.info("Creating all tables...")
-#         db_helper.create_all_table()
-#         db_helper.print_all_tables()
-#         Base.metadata.create_all(application.state.db_engine)  # Create tables
-#
-#         logger.info("Tables created successfully.")
-#
-#
-#     except Exception as e:
-#         logger.error("Error during database initialization: %s", str(e), exc_info=True)
-#         raise
-#
-#     try:
-#         yield
-#     finally:
-#         if hasattr(application.state, "db_engine"):
-#             logger.info("Closing database connection...")
-#             application.state.db_engine.dispose()
-#             logger.info("Database connection closed.")
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    logger.info("Starting application lifespan...")
 
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}})
+    try:
+        logger.info("Initializing database connection...")
+
+        db_init = DbInitializer(
+            POSTGRESQL_DRIVER_NAME,
+            POSTGRESQL_HOST,
+            POSTGRESQL_DB_NAME,
+            POSTGRESQL_USER_NAME,
+            POSTGRESQL_PASSWORD,
+            POSTGRESQL_PORT_NO
+        )
+
+        application.state.db_engine = db_init.db_create_engin()
+        application.state.db_session = db_init.db_create_session()
+
+        logger.info("Database engine and session created successfully.")
+        logger.info("Initializing database helper...")
+        db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
+
+        logger.info("Creating all schemas...")
+        db_helper.create_all_schema()
+        logger.info("Schemas created successfully.")
+
+        logger.info("Creating all tables...")
+        db_helper.create_all_table()
+        db_helper.print_all_tables()
+        Base.metadata.create_all(application.state.db_engine)  # Create tables
+
+        logger.info("Tables created successfully.")
+
+
+    except Exception as e:
+        logger.error("Error during database initialization: %s", str(e), exc_info=True)
+        raise
+
+    try:
+        yield
+    finally:
+        if hasattr(application.state, "db_engine"):
+            logger.info("Closing database connection...")
+            application.state.db_engine.dispose()
+            logger.info("Database connection closed.")
+
+app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}}, lifespan=lifespan)
 logger.info("FastAPI application initialized.")
 
 
@@ -375,11 +375,8 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 
 @app.post("/ingest")
 def ingest(email_content:str, response_json:Dict[str,list]):
-    db_init = DbInitializer(
-            POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
-            POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
-        )
-    embedder = Embedder(db_init.db_create_engin(), db_init.db_create_session())
+
+    embedder = Embedder(app.state.db_engine, app.state.db_session)
     minified = embedder.minify_json(response_json)
     if not minified:
         raise HTTPException(status_code=400, detail="Invalid or empty JSON for embedding.")
