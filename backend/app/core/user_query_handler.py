@@ -15,7 +15,7 @@ class UserQueryAgent:
                 azure_endpoint=AZURE_OPENAI_ENDPOINT,
                 api_version=AZURE_OPENAI_API_VERSION
             )
-            self.model = AZURE_OPENAI_DEPLOYMENT
+            self.model = AZURE_OPENAI_DEPLOYMENT_NAME
             logger.info("✅ Azure OpenAI client initialized successfully.")
         except Exception as e:
             logger.exception("❌ Failed to initialize Azure OpenAI client.")
@@ -32,9 +32,7 @@ class UserQueryAgent:
                 temperature=0
             )
             response = response.choices[0].message.content
-
-            result = json.loads(response)
-            return result
+            return response
 
         except Exception as e:
             raise RuntimeError(f"Query Decomposition failed: {e}")
