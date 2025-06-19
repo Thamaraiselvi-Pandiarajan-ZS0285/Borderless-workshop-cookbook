@@ -1,7 +1,6 @@
 import base64
 import logging
 import os
-import re
 import uuid
 import mimetypes
 import json
@@ -24,6 +23,7 @@ from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
+from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
 from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
@@ -297,7 +297,7 @@ def do_classify(email: EmailClassificationRequest):
 
 
 @app.post("/api/extraction/metadata_extractor")
-async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
+def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
     Accepts a list of email image inputs (either file path or base64 string),
     extracts metadata using OCR and LLM, and returns the result per file.
@@ -363,3 +363,56 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 #
+
+
+@app.post("/api/all-in-one")
+async def test(email_file: EmailClassificationRequest):
+    results = {}
+
+    try:
+        email_data = email_file.model_dump()
+
+        if not isinstance(email_data, dict):
+            raise ValueError("The uploaded JSON must be an object.")
+
+        file_utils = FilePathUtils(file=None, temp_dir=None)
+        output_dir = file_utils.file_dir()
+        os.makedirs(output_dir, exist_ok=True)
+        file_name = str(uuid.uuid4())
+        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+        pdf_converter = HTMLEmailToPDFConverter()
+        pdf_converter.convert_to_pdf(email_data, pdf_path)
+        base64_encoder = FileToBase64(pdf_path)
+        encoded_data = base64_encoder.do_base64_encoding_by_file_path()
+
+        paper_itemizer_object = PaperItemizer(
+            input=encoded_data,
+            file_name=file_name,
+            extension=DEFAULT_IMAGE_FORMAT
+        )
+
+        results = paper_itemizer_object.do_paper_itemizer()
+
+        classification_result = do_classify(email_file)
+
+        email_image_request= []
+        for result in results:
+            input_data = result["encode"]
+            file_extension = result["fileExtension"]
+            file_name = result["fileName"]
+            category = classification_result.classification
+            email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
+
+        email_request = EmailImageRequest(data=email_image_request)
+
+        response = upload_email_images(email_request)
+        return response
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
