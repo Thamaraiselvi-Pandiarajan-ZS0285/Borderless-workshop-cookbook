@@ -380,7 +380,7 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #
 
 @app.post("/ingest")
-def ingest(email_content:str, response_json:Dict[str,list]):
+def ingest_embedding(email_content:str, response_json:Dict[str,list]):
 
     embedder = Embedder(app.state.db_engine, app.state.db_session)
     minified = embedder.minify_json(response_json)
@@ -407,11 +407,13 @@ async def test(email_file: EmailClassificationRequest):
         os.makedirs(output_dir, exist_ok=True)
         file_name = str(uuid.uuid4())
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+        #email to pdf
         pdf_converter = HTMLEmailToPDFConverter()
         pdf_converter.convert_to_pdf(email_data, pdf_path)
+        #encode
         base64_encoder = FileToBase64(pdf_path)
         encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-
+        #paper-itemizer
         paper_itemizer_object = PaperItemizer(
             input=encoded_data,
             file_name=file_name,
@@ -419,7 +421,7 @@ async def test(email_file: EmailClassificationRequest):
         )
 
         results = paper_itemizer_object.do_paper_itemizer()
-
+        #classification
         classification_result = do_classify(email_file)
 
         email_image_request= []
@@ -435,6 +437,11 @@ async def test(email_file: EmailClassificationRequest):
         response = upload_email_images(email_request)
         response["summary"] = classification_result.summary
 
+        for result in response["results"]:
+            subject = result["extracted_metadata"]["subject"]
+            full_email_text = result["extracted_metadata"]["full_email_text"]
+            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{classification_result.summary}"
+            ingest_embedding(combined_text,response)
 
         return response
 
