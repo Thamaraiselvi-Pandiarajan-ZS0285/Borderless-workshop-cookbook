@@ -38,7 +38,7 @@ class EmailOCRAgent:
         match category.lower():
             case "rfp":
                 return RFP_EXTRACTION_PROMPT
-            case "winning":
+            case "bid-win":
                 return BID_WIN_EXTRACTION_PROMPT
             case "rejection":
                 return BID_REJECTION_EXTRACTION_PROMPT

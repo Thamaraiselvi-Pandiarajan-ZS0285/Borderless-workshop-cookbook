@@ -5,13 +5,16 @@ import uuid
 import mimetypes
 import json
 import re
+from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
+
 from backend.app.core.classifier_agent import EmailClassifierProcessor
+from backend.app.core.embedder import Embedder
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
@@ -23,13 +26,19 @@ from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
+from backend.config.db_config import *
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
+from backend.db.db_helper.db_Initializer import DbInitializer
+from backend.db.db_helper.db_utils import Dbutils
+from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
 from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import sessionmaker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -364,13 +373,28 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 #
 
+@app.post("/ingest")
+def ingest(email_content:str, response_json:Dict[str,list]):
+    db_init = DbInitializer(
+            POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
+            POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
+        )
+    embedder = Embedder(db_init.db_create_engin(), db_init.db_create_session())
+    minified = embedder.minify_json(response_json)
+    if not minified:
+        raise HTTPException(status_code=400, detail="Invalid or empty JSON for embedding.")
+    json_embedding = embedder.embed_text(minified)
+    embedder.ingest_email_metadata_json( "sender@yahoo.com",minified,json_embedding)
+
+    content_embedding = embedder.embed_text(email_content)
+    embedder.ingest_email_for_content("sender@yahoo.com",email_content, content_embedding)
+
 
 @app.post("/api/all-in-one")
 async def test(email_file: EmailClassificationRequest):
-    results = {}
-
     try:
-        email_data = email_file.model_dump()
+
+        email_data = email_file.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
 
         if not isinstance(email_data, dict):
             raise ValueError("The uploaded JSON must be an object.")
@@ -406,6 +430,9 @@ async def test(email_file: EmailClassificationRequest):
         email_request = EmailImageRequest(data=email_image_request)
 
         response = upload_email_images(email_request)
+        response["summary"] = classification_result.summary
+
+
         return response
 
     except ValueError as ve:
