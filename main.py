@@ -466,3 +466,9 @@ async def user_query(user_query: str, top_k=10):
 
     candidate_texts = [text for _, text in semantic_result]
     reranked = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
+
+    formatted_context = embedder.format_reranked_results(reranked)
+
+    final_response = embedder.answer_query(user_query, formatted_context)
+
+    return final_response

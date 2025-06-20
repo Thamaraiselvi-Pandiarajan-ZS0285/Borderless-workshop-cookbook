@@ -16,11 +16,6 @@ from backend.prompts.user_query_prompt import USER_QUERY_SYSTEM_PROMPT
 load_dotenv()
 
 
-#cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-# tokenizer = AutoTokenizer.from_pretrained("cross-encoder/ms-marco-MiniLM-L-6-v2")
-# model = AutoModelForSequenceClassification.from_pretrained("cross-encoder/ms-marco-MiniLM-L-6-v2")
-
-
 class Embedder:
     def __init__(self, db_engine:Engine,db_session:sessionmaker):
         self.client = AzureOpenAI(
@@ -98,12 +93,19 @@ class Embedder:
         reranked = sorted(zip(scores, candidate_texts), key=lambda x: x[0], reverse=True)
         return reranked
 
-    def answer_query(self, query_input, reranked_results):
+    def format_reranked_results(reranked):
+        return "\n\n".join([f"Context {i + 1}:\n{text}" for i, (_, text) in enumerate(reranked)])
+
+    def answer_query(self, query_input, formatted_reranked_results):
+        user_prompt = (
+        f"User Query: {query_input}\n\n"
+        f"Top Matching Content:\n{formatted_reranked_results}"
+    )
         response = self.client.chat.completions.create(
             model=AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME,
             messages=[
                 {"role": "system", "content":  USER_QUERY_SYSTEM_PROMPT},
-                {"role": "user", "content": reranked_results}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0
         )
