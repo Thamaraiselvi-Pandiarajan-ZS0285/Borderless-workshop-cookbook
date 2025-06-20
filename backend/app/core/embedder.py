@@ -72,7 +72,7 @@ class Embedder:
 
     def semantic_search(self, query_embedding, top_k=10):
         with self.db_session() as session:
-            records = session.query(EmailContentEmbedding).all()
+            records = session.query(MetadataExtractionJsonEmbedding).all()
 
             # Compute similarity for each stored embedding
             results = []
