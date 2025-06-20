@@ -22,4 +22,5 @@ class EmailClassifyImageInput(BaseModel):
     file_extension: str
 
 class EmailClassifyImageRequest(BaseModel):
-    data: List[EmailClassifyImageInput]
+    imagedata: List[EmailClassifyImageInput]
+    json_data : EmailClassificationRequest

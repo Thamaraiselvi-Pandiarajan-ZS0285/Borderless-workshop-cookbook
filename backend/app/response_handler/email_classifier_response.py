@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 
-from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.email_request import *
 
 
 class EmailClassifierResponse(BaseModel):
@@ -21,5 +21,23 @@ def build_email_classifier_response( email:EmailClassificationRequest,
         summary=summary,
         sender=email.sender,
         receivedAt=email.received_at,
+        classification=classification
+    )
+
+class EmailImageClassifierResponse(BaseModel):
+    subject: str
+    body: str
+    summary: str
+    sender: str
+    receivedAt: datetime
+    classification: list[str]
+
+def email_classify_response_via_vlm(request:EmailClassifyImageRequest, classification:list[str], summary:str) ->EmailImageClassifierResponse:
+    return EmailImageClassifierResponse(
+        subject=request.json_data.subject,
+        body=request.json_data.body,
+        summary=summary,
+        sender=request.json_data.sender,
+        receivedAt=request.json_data.received_at,
         classification=classification
     )
