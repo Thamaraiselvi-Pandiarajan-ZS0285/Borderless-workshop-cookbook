@@ -6,6 +6,7 @@ import requests
 
 from backend.app.core.email_processor import EmailProcessor
 from backend.app.core.graph_client import GraphClient
+from backend.config.dev_config import GRAPH_ENDPOINT, USER_ID
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +25,7 @@ class EmailListener:
         # Filter emails received after last check
         iso_time = self.last_checked_time.isoformat() + "Z"
         url = (
-            f"https://graph.microsoft.com/v1.0/users/{self.user_email}/messages"
+            f"{GRAPH_ENDPOINT}/users/{USER_ID}/messages"
             f"?$filter=receivedDateTime ge {iso_time}&$orderby=receivedDateTime desc&$top=10"
         )
         headers = {"Authorization": f"Bearer {self.access_token}"}
@@ -42,4 +43,5 @@ class EmailListener:
                 self.last_checked_time = datetime.utcnow()
             except Exception as e:
                 logger.error(f"Error fetching emails: {e}")
+
             time.sleep(self.poll_interval)

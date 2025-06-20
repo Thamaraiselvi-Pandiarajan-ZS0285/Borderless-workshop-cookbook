@@ -318,8 +318,8 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 
     return {"results": results}
 
-@app.post("/api/email_listener")
-async def listen():
+@app.post("/api/email_processor")
+async def process():
     listener = EmailListener(USER_ID)
     try:
         listener.start()
