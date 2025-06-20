@@ -13,12 +13,12 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
+from backend.app.core.email_listener import EmailListener
 from backend.app.core.email_processor import EmailProcessor
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.request_handler.email_listener import EmailListenerRequest
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
@@ -31,6 +31,7 @@ from backend.models.all_db_models import Base
 from backend.utils.base_64_operations import Base64Utils
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.config.dev_config import USER_ID
 
 # from backend.models.save_email_chunks import EmailChunk;
 
@@ -318,10 +319,10 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     return {"results": results}
 
 @app.post("/api/email_listener")
-async def email_listener():
-    processor = EmailProcessor()
+async def listen():
+    listener = EmailListener(USER_ID)
     try:
-        processor.process_emails(limit=5)
+        listener.start()
 
         return {"status": "processed"}
     except Exception as e:
