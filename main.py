@@ -456,7 +456,7 @@ async def test(email_file: EmailClassificationRequest):
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
 @app.post("/api/query-input")
-async def user_query(user_query: str, top_k=10):
+async def user_query(user_query: str, top_k: int=10):
     user = UserQueryAgent()
     result = user.query_decomposition(user_query)
 
