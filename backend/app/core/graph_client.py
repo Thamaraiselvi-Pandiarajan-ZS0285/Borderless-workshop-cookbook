@@ -12,12 +12,7 @@ class GraphClient:
         self.token = self._get_token()
 
     def _get_token(self):
-        #result = self.app.acquire_token_silent(SCOPE, account=None)
-
-        #if not result:
         result = self.app.acquire_token_for_client(scopes=SCOPE)
-
-        print(result)
 
         if "access_token" in result:
             return result["access_token"]
