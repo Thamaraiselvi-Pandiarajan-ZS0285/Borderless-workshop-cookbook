@@ -9,12 +9,12 @@ from dao.EmailDAO import EmailDAO
 
 
 class EmailProcessor:
-    def __init__(self, db_session:sessionmaker):
+    def __init__(self):
         self.listener = EmailListener()
         self.parser = EmailParser()
         self.graph = GraphClient()
         self.access_token = self.graph._get_token()
-        self.email_dao = EmailDAO(db_session)
+        #self.email_dao = EmailDAO(db_session)
         self.email_mover = EmailMover(self.access_token, USER_ID)
 
     def process_emails(self, limit=10):
@@ -22,11 +22,12 @@ class EmailProcessor:
         for email in emails:
             message_id = email["id"]
             try:
-                parsed = self.parser.parse_email(email)
-                print(parsed)
+                print(email)
+                #parsed = self.parser.parse_email(email)
+                #print(parsed)
 
                 # Store email metadata into postgres
-                self.store_email(parsed)
+                #self.store_email(parsed)
 
                 # Move to Processed folder
                 self.email_mover.move_email_to_folder(email["id"], "Processed")
@@ -48,7 +49,7 @@ class EmailProcessor:
                 print(f"Storing email: {parsed['subject']}")
 
                 # Store email metadata into postgres
-                self.store_email(parsed)
+                #self.store_email(parsed)
 
                 # 2. Move to Processed folder
                 self.email_mover.move_email_to_folder(message_id, "Processed")

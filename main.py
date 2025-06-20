@@ -13,10 +13,12 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
+from backend.app.core.email_processor import EmailProcessor
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.request_handler.email_listener import EmailListenerRequest
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
@@ -249,12 +251,6 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         logger.exception("❌ Unexpected error during PDF conversion.")
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
-@app.post("/api/execute")
-def execute(email: EmailClassificationRequest):
-    email = email_generation()
-    cllssemail = email_classification(email)
-    persistence(clas)
-    #retrieval_agent()
 
 
 @app.post("/api/classify-email")
@@ -320,6 +316,16 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
             })
 
     return {"results": results}
+
+@app.post("/api/email_listener")
+async def email_listener():
+    processor = EmailProcessor()
+    try:
+        processor.process_emails(limit=5)
+
+        return {"status": "processed"}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
 
 #
 # @app.post("/query")

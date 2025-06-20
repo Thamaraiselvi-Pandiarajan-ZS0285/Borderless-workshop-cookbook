@@ -28,10 +28,13 @@ class EmailParser:
 
         return {
             "id": email_id,
+            "email_id": email_id,
             "message_id": message_id,
             "subject": subject,
             "from": sender,
+            "sender": sender,
             "to": recipients,
+            "recipients": recipients,
             "received_time": received_time,
             "body_content": body_content,
             "body_type": body_type,
