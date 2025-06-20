@@ -351,9 +351,9 @@ def do_classify_via_vlm(request: EmailClassifyImageRequest):
                     base64_converter = FileToBase64(item.input_path)
                     base64_image = base64_converter.do_base64_encoding()
                 else:
-                    if not item.input.startswith("data:image") and len(item.input) < 100:
+                    if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
                         raise ValueError("Invalid base64 input or unreadable image path.")
-                    base64_image = item.input
+                    base64_image = item.input_path
                 extracted_text = classifier.classify_via_vlm(base64_image)
                 extracted_texts.append(extracted_text)
             except Exception as e:
@@ -481,27 +481,30 @@ async def test(email_file: EmailClassificationRequest):
         # classification_result = do_classify(email_file)
 
         email_image_request= []
+        summaries = []
         classify_image_request_data = {"imagedata": [], "json_data": email_file}
         for result in results:
-            input_data = result["encode"]
+            input_data = result["filePath"]
             file_extension = result["fileExtension"]
             file_name = result["fileName"]
-            classify_image_request_data["imagedata"].append({"input":input_data, "file_name":file_name, "file_extension":file_extension})
+            classify_image_request_data["imagedata"].append({"input_path":input_data, "file_name":file_name, "file_extension":file_extension})
             classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
             classify_via_llm = do_classify_via_vlm(classify_image_request)
             category = classify_via_llm.classification
+            summary = classify_via_llm.summary
+            summaries.append(summary)
              # category = classification_result.classificatin
             email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
 
         email_request = EmailImageRequest(data=email_image_request)
 
         response = upload_email_images(email_request)
-        response["summary"] = classify_via_llm.summary
+        # response["summary"] = classify_via_llm.summary
 
         for result in response["results"]:
             subject = result["extracted_metadata"]["subject"]
             full_email_text = result["extracted_metadata"]["full_email_text"]
-            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{classification_result.summary}"
+            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
             ingest_embedding(combined_text,response)
 
         return response
