@@ -39,5 +39,5 @@ CLASSIFICATION_PROMPT_VLM ="""
         6. Do **not** provide any explanation, justification, or extra output—only the classification label.
         
         Output Format:
-        "RFP" | "Bid-Win" | "Rejection" | "Unclear"
+        RFP | Bid-Win | Rejection | Unclear
 """

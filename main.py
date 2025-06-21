@@ -361,7 +361,7 @@ def do_classify_via_vlm(request: EmailClassifyImageRequest):
         for label, variant in TASK_VARIANTS.items():
             summary_response = summarizer.summarize_text(full_email_content, variant)
             email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
-        return email_classify_response_via_vlm(request,extracted_texts,email_and_attachment_summary)
+        return email_classify_response_via_vlm(request,"\n".join(extracted_texts),email_and_attachment_summary)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})

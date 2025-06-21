@@ -10,7 +10,7 @@ from backend.config.dev_config import (
     AZURE_OPENAI_API_KEY,
     AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_API_VERSION,
-    AZURE_OPENAI_DEPLOYMENT
+    AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_DEPLOYMENT_NAME
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class EmailOCRAgent:
                 azure_endpoint=AZURE_OPENAI_ENDPOINT,
                 api_version=AZURE_OPENAI_API_VERSION
             )
-            self.model = AZURE_OPENAI_DEPLOYMENT
+            self.model = AZURE_OPENAI_DEPLOYMENT_NAME
             logger.info("✅ Azure OpenAI client initialized successfully.")
         except Exception as e:
             logger.exception("❌ Failed to initialize Azure OpenAI client.")
