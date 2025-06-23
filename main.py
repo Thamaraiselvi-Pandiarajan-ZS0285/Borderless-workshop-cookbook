@@ -12,7 +12,6 @@ from typing import Dict, Any
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
-
 from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.embedder import Embedder
 # from backend.app.core.embedder import Embedder
@@ -20,14 +19,18 @@ from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.core.session_memory_manager import AutogenSessionManager
+from backend.app.core.user_query_handler import UserQueryAgent
 from backend.app.request_handler.email_request import EmailClassificationRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
+from backend.app.request_handler.orchestrator_protocol import OrchestrateRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.email_classifier_response import build_email_classifier_response
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
+from backend.config.llm_config import LlmConfig
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.db.db_helper.db_utils import Dbutils
 from backend.models.all_db_models import Base
@@ -445,12 +448,59 @@ async def test(email_file: EmailClassificationRequest):
 
         return response
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
-
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
 
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={"error": str(ve)})
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
+@app.post("/api/query-input")
+async def user_query(user_query: str, top_k: int=10):
+    user = UserQueryAgent()
+    result = user.query_decomposition(user_query)
+
+    embedder = Embedder(app.state.db_engine, app.state.db_session)
+    query_embedding_result = embedder.embed_text(result)
+    semantic_result = embedder.semantic_search(query_embedding_result, top_k=top_k*3)
+
+    candidate_texts = [text for _, text in semantic_result]
+    reranked = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
+
+    formatted_context = embedder.format_reranked_results(reranked)
+
+    final_response = embedder.answer_query(user_query, formatted_context)
+
+    return final_response
+
+@app.post("/api/memory")
+async def converse(query:OrchestrateRequest):
+    session_manager = AutogenSessionManager(app.state.db_engine, app.state.db_session)
+
+    # Create new session
+    conv_id = session_manager.create_session()
+    print(f"Created session: {conv_id}")
+
+    # Get the orchestrator
+    orchestrator = session_manager.get_session(conv_id)
+
+    # Run some workflow
+    result = orchestrator.orchestrate(query.message)
+
+    # Save session
+    session_manager.save_session(conv_id, metadata={"workflow_type": "email_classification"})
+
+    # Close session
+    session_manager.close_session(conv_id)
+
+    # Later, load the session
+    loaded_orchestrator = session_manager.load_session(conv_id)
+    if loaded_orchestrator:
+        print("Session loaded successfully!")
+        # Continue conversation
+        result2 = loaded_orchestrator.resume_conversation("Continue processing...")
+
+    return result
 

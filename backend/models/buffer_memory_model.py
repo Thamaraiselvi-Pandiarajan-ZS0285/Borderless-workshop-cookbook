@@ -8,6 +8,8 @@ import datetime
 from sqlalchemy import DateTime
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql.functions import func
+from sqlalchemy.sql.schema import Index
+
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.config.db_config import *
 import asyncio
@@ -24,11 +26,17 @@ class Base(DeclarativeBase):
 # Define ORM model for message persistence
 class ChatMessage(Base):
     __tablename__ = 'chat_messages'
-    __table_args__ = {"schema": "public"}
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    conversation_id: Mapped[str] = mapped_column(String, index=True)
-    role: Mapped[str] = mapped_column(String)
-    content: Mapped[str] = mapped_column(Text)
+    __table_args__ = {"schema": "chat_history"}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String) #user, assistant, system
+    sender: Mapped[str] = mapped_column(String, nullable=True) # agent name
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_index:Mapped[int] = mapped_column(Integer, nullable = False, default=0)
+    metadata_in:Mapped[str] = mapped_column(String, nullable = True)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=func.now(), server_default=func.now())
 
-
+    # __table_args__ = (
+    #     Index('idx_conversation_timestamp', 'conversation_id', 'timestamp'),
+    #     Index('idx_conversation_index', 'conversation_id', 'message_index'),
+    # )

@@ -5,24 +5,20 @@ from autogen_core.model_context import BufferedChatCompletionContext
 from autogen_core.memory import ListMemory, MemoryContent
 import uuid
 import datetime
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import sessionmaker
 
 # from backend.app.core.base_agent import BaseAgent
 from backend.config.llm_config import LlmConfig
-from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.config.db_config import *
 import asyncio
 from backend.models.buffer_memory_model import ChatMessage, Base
 
-db_init = DbInitializer(
-            POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
-            POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO
-        )
 
 class MultiAgentBuffer(ABC):
-    def __init__(self, conversation_id:str=None, buffer_size:int=None,llm_config: Optional[LlmConfig] = None):
+    def __init__(self,db_engine:Engine ,db_session:sessionmaker, conversation_id:str=None, buffer_size:int=None,llm_config: Optional[LlmConfig] = None):
         self.conversation_id = conversation_id or str(uuid.uuid4())
-        self.db_engine = db_init.db_create_engin()
-        self.session = db_init.db_create_session()
+        self.db_engine = db_engine
+        self.db_session = db_session
         Base.metadata.create_all(bind=self.db_engine)
         # LLM Config
         self.llm_config = llm_config
@@ -61,12 +57,12 @@ class MultiAgentBuffer(ABC):
         await self.memory.update_context(self.context)
 
     def _load_message_history(self):
-        with self.session() as session:
+        with self.db_session() as session:
             rows = session.query(ChatMessage).filter_by(conversation_id=self.conversation_id).all()
             return [{"role": msg.role, "content": msg.content} for msg in rows]
 
     def _save_message_to_db(self, role: str, content: str):
-        with self.session() as session:
+        with self.db_session() as session:
             db_msg = ChatMessage(conversation_id=self.conversation_id,
                 role=role,
                 content=content)
@@ -89,5 +85,5 @@ class MultiAgentBuffer(ABC):
         return asyncio.run(self.context.get_messages())
 
     def close(self):
-        with self.session() as session:
+        with self.db_session() as session:
             session.close()

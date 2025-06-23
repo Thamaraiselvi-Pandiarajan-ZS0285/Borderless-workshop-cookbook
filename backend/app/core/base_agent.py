@@ -6,6 +6,14 @@ from backend.app.core.multi_agent_buffer import MultiAgentBuffer
 from backend.config.llm_config import LlmConfig
 from backend.config.dev_config import *
 from openai.types.chat import ChatCompletionUserMessageParam
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import sessionmaker
+
+
+class ConcreteMultiAgentBuffer(MultiAgentBuffer):
+    async def on_message(self, message: str, sender: str):
+        pass
+
 
 class BaseAgent(ABC):
     def __init__(self, name: str, buffer: "MultiAgentBuffer", role: str = "agent"):
@@ -62,35 +70,12 @@ class AssistantAgent(BaseAgent):
 
 class GroupChatManager:
     def __init__(self, buffer: MultiAgentBuffer):
+        super().__init__()
         self.buffer = buffer
 
     async def initiate_chat(self, initiator: str, recipient: str, message: str):
-        # print(f"Initiating chat from {initiator} to {recipient}: {message}")
+        print(f"Initiating chat from {initiator} to {recipient}: {message}")
         response = await self.buffer.route_message(message, initiator, recipient)
-        # print(f"Final response: {response}")
+        print(f"Final response: {response}")
         return response
 
-
-async def main():
-    buffer = MultiAgentBuffer(conversation_id="conv_123",buffer_size=5,llm_config=LlmConfig)
-    await buffer.initialize()
-    user_proxy = UserProxyAgent(name="User", buffer=buffer)
-    assistant = AssistantAgent(name="Assistant", buffer=buffer,llm_config=LlmConfig)
-
-    buffer.register_agent(user_proxy)
-    buffer.register_agent(assistant)
-
-    manager = GroupChatManager(buffer=buffer)
-    print("Chat started. Type 'exit' to quit.")
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() in ("exit", "quit"):
-            break
-
-        # Human sends message to assistant via buffer
-        response = await manager.initiate_chat("User", "Assistant", user_input)
-        print(f"Assistant: {response}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
