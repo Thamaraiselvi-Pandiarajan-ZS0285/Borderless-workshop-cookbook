@@ -1,17 +1,31 @@
-trigger: none 
+trigger: none  # No auto-trigger (since no GitHub webhooks)
 
 pool:
-  name: Default  
+  name: Default
   demands:
-    - agent.name -equals bap-agent  
+    - agent.name -equals bap-agent
+
+variables:
+- group: GitHubAccess  # This links your GITHUB_USERNAME and GITHUB_TOKEN
+- name: GITHUB_REPO
+  value: 'zucisystems-dev/Borderless-workshop-cookbook-and-pilot'
+- name: BRANCH
+  value: 'master'
 
 steps:
 - script: |
-    python --version
-    pip --version
-  displayName: 'Check Python and Pip Version'
+    echo "Cloning repository..."
+    git clone https://$(GITHUB_USERNAME):$(GITHUB_TOKEN)@github.com/$(GITHUB_REPO).git --branch $(BRANCH)
+    cd Borderless-workshop-cookbook-and-pilot/backend
 
-- script: |
+    echo "Setting up virtual environment..."
+    python3 -m venv venv
+    source venv/bin/activate
+
+    echo "Installing dependencies..."
     pip install --upgrade pip
-    pip install -r backend/requirements.txt
-  displayName: 'Install Python Dependencies'
+    pip install -r requirements.txt
+
+    echo "Running main.py"
+    python main.py
+  displayName: 'Clone and Run Python App'
