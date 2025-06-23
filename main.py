@@ -21,11 +21,12 @@ from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.core.session_memory_manager import AutogenSessionManager
 from backend.app.core.user_query_handler import UserQueryAgent
-from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.orchestrator_protocol import OrchestrateRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
+    email_classify_response_via_vlm
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
@@ -314,6 +315,61 @@ def do_classify(email: EmailClassificationRequest):
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
 
+@app.post("/api/classify_email_vlm")
+def do_classify_via_vlm(request: EmailClassifyImageRequest):
+    try:
+        classifier = EmailClassifierProcessor()
+        summarizer = SummarizationAgent()
+        extractor = AttachmentExtractor()
+
+        full_email_content = request.json_data.body
+        attachment_summary: str = ""
+        email_and_attachment_summary: str = ""
+
+        if request.json_data.hasAttachments:
+            # Step 1: Extract raw attachment content
+            attachment_content = extractor.extract_many(request.json_data.attachments)
+
+            # Step 2: Split into page-wise chunks
+            pages = split_into_pages(attachment_content)
+
+            # Step 3: Summarize each page individually
+            page_summaries = []
+            for idx, page in enumerate(pages):
+                summary = summarizer.summarize_text(page)
+                page_summaries.append(f"Page {idx + 1} Summary:\n{summary}")
+
+            # Step 4: Generate final summary from all page summaries
+            combined_summaries_text = "\n\n".join(page_summaries)
+            attachment_summary = summarizer.summarize_text(combined_summaries_text)
+
+        # Step 5: Append final summary to the body
+        full_email_content += "Attachment Summary\n\n" + attachment_summary
+        extracted_texts = []
+        # Step 6: classify the email via vlm
+        for item in request.imagedata:
+            try:
+                # Resolve image to base64 string
+                if os.path.exists(item.input_path):
+                    base64_converter = FileToBase64(item.input_path)
+                    base64_image = base64_converter.do_base64_encoding()
+                else:
+                    if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
+                        raise ValueError("Invalid base64 input or unreadable image path.")
+                    base64_image = item.input_path
+                extracted_text = classifier.classify_via_vlm(base64_image)
+                extracted_texts.append(extracted_text)
+            except Exception as e:
+                logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
+        for label, variant in TASK_VARIANTS.items():
+            summary_response = summarizer.summarize_text(full_email_content, variant)
+            email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+        return email_classify_response_via_vlm(request,extracted_texts,email_and_attachment_summary)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
+
 @app.post("/api/extraction/metadata_extractor")
 def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
@@ -425,34 +481,42 @@ async def test(email_file: EmailClassificationRequest):
 
         results = paper_itemizer_object.do_paper_itemizer()
         #classification
-        classification_result = do_classify(email_file)
+        # classification_result = do_classify(email_file)
 
         email_image_request= []
+        summaries = []
+        classify_image_request_data = {"imagedata": [], "json_data": email_file}
         for result in results:
-            input_data = result["encode"]
+            input_data = result["filePath"]
             file_extension = result["fileExtension"]
             file_name = result["fileName"]
-            category = classification_result.classification
+            classify_image_request_data["imagedata"].append({"input_path":input_data, "file_name":file_name, "file_extension":file_extension})
+            classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
+            classify_via_llm = do_classify_via_vlm(classify_image_request)
+            category = classify_via_llm.classification
+            summary = classify_via_llm.summary
+            summaries.append(summary)
+             # category = classification_result.classificatin
             email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
 
         email_request = EmailImageRequest(data=email_image_request)
 
         response = upload_email_images(email_request)
-        response["summary"] = classification_result.summary
+        # response["summary"] = classify_via_llm.summary
 
         for result in response["results"]:
             subject = result["extracted_metadata"]["subject"]
             full_email_text = result["extracted_metadata"]["full_email_text"]
-            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{classification_result.summary}"
+            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
             ingest_embedding(combined_text,response)
 
         return response
 
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
