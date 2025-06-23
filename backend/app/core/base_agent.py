@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, List
 from openai import AzureOpenAI
 from backend.app.core.multi_agent_buffer import MultiAgentBuffer
-from backend.config.llm_config import LLM_CONFIG
+from backend.config.llm_config import LlmConfig
 from backend.config.dev_config import *
 from openai.types.chat import ChatCompletionUserMessageParam
 
@@ -72,10 +72,10 @@ class GroupChatManager:
 
 
 async def main():
-    buffer = MultiAgentBuffer(conversation_id="conv_123",buffer_size=5,llm_config=LLM_CONFIG)
+    buffer = MultiAgentBuffer(conversation_id="conv_123",buffer_size=5,llm_config=LlmConfig)
     await buffer.initialize()
     user_proxy = UserProxyAgent(name="User", buffer=buffer)
-    assistant = AssistantAgent(name="Assistant", buffer=buffer,llm_config=LLM_CONFIG)
+    assistant = AssistantAgent(name="Assistant", buffer=buffer,llm_config=LlmConfig)
 
     buffer.register_agent(user_proxy)
     buffer.register_agent(assistant)

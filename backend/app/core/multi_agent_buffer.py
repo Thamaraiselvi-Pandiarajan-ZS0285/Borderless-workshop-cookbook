@@ -7,7 +7,7 @@ import uuid
 import datetime
 
 # from backend.app.core.base_agent import BaseAgent
-from backend.config.llm_config import LLM_CONFIG
+from backend.config.llm_config import LlmConfig
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.config.db_config import *
 import asyncio
@@ -19,7 +19,7 @@ db_init = DbInitializer(
         )
 
 class MultiAgentBuffer(ABC):
-    def __init__(self, conversation_id:str=None, buffer_size:int=None,llm_config: Optional[LLM_CONFIG] = None):
+    def __init__(self, conversation_id:str=None, buffer_size:int=None,llm_config: Optional[LlmConfig] = None):
         self.conversation_id = conversation_id or str(uuid.uuid4())
         self.db_engine = db_init.db_create_engin()
         self.session = db_init.db_create_session()

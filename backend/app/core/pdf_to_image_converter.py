@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from pdf2image import convert_from_path
 import os
 from abc import ABC, abstractmethod

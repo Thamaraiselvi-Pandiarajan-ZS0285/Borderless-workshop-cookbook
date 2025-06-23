@@ -3,8 +3,7 @@ from openai import AzureOpenAI
 from typing import Optional
 
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
-from backend.prompts.meta_data_extraction import META_DATA_EXTRACTION_PROMPT
-
+from backend.prompts.meta_data_extraction import RFP_EXTRACTION_PROMPT,BID_WIN_EXTRACTION_PROMPT, BID_REJECTION_EXTRACTION_PROMPT
 
 # Assume these constants are imported from your config
 from backend.config.dev_config import (
@@ -35,7 +34,18 @@ class EmailOCRAgent:
             logger.exception("❌ Failed to initialize Azure OpenAI client.")
             raise RuntimeError(f"Initialization Failed: {e}") from e
 
-    def extract_text_from_base64(self, base64_str: str) -> str:
+    def get_prompt_by_category(self, category: str) -> str:
+        match category.lower():
+            case "rfp":
+                return RFP_EXTRACTION_PROMPT
+            case "bid-win":
+                return BID_WIN_EXTRACTION_PROMPT
+            case "rejection":
+                return BID_REJECTION_EXTRACTION_PROMPT
+            case _:
+                raise ValueError(f"Unsupported category: {category}")
+
+    def extract_text_from_base64(self, base64_str: str, category: str) -> str:
         """
         Extracts structured content or metadata from a base64-encoded image using a vision-enabled OpenAI model.
 
@@ -51,13 +61,14 @@ class EmailOCRAgent:
         if not base64_str or not isinstance(base64_str, str):
             raise ValueError("Input base64 string is invalid or empty.")
 
+        prompt = self.get_prompt_by_category(category)
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": META_DATA_EXTRACTION_PROMPT
+                        "content": prompt
                     },
                     {
                         "role": "user",

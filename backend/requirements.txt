@@ -18,4 +18,7 @@ pdfplumber~=0.11.7
 pyautogen~=0.9.0
 tiktoken
 pgvector[sqlalchemy]
+PyPDF2
+python-docx
+
 
