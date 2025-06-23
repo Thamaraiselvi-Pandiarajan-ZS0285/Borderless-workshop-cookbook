@@ -9,7 +9,9 @@ WORKDIR /app
 
 # Copy requirements and install
 COPY backend/requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt \
+    && pip install python-multipart
 
 # Copy entire source code
 COPY . .
