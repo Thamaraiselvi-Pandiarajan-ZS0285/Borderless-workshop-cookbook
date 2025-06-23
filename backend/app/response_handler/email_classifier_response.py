@@ -30,9 +30,9 @@ class EmailImageClassifierResponse(BaseModel):
     summary: str
     sender: str
     receivedAt: datetime
-    classification: str
+    classification: list[str]
 
-def email_classify_response_via_vlm(request:EmailClassifyImageRequest, classification:str, summary:str) ->EmailImageClassifierResponse:
+def email_classify_response_via_vlm(request:EmailClassifyImageRequest, classification:list[str], summary:str) ->EmailImageClassifierResponse:
     return EmailImageClassifierResponse(
         subject=request.json_data.subject,
         body=request.json_data.body,
