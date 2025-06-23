@@ -21,6 +21,8 @@ from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
+from backend.app.core.user_query_handler import UserQueryAgent
+
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
@@ -518,3 +520,20 @@ async def test(email_file: EmailClassificationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
+@app.post("/api/query-input")
+async def user_query(user_query: str, top_k: int=10):
+    user = UserQueryAgent()
+    result = user.query_decomposition(user_query)
+
+    embedder = Embedder(app.state.db_engine, app.state.db_session)
+    query_embedding_result = embedder.embed_text(result)
+    semantic_result = embedder.semantic_search(query_embedding_result, top_k=top_k*3)
+
+    candidate_texts = [text for _, text in semantic_result]
+    reranked = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
+
+    formatted_context = embedder.format_reranked_results(reranked)
+
+    final_response = embedder.answer_query(user_query, formatted_context)
+
+    return final_response

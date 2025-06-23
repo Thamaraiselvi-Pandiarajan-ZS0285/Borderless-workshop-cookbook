@@ -1,17 +1,61 @@
-trigger: none 
+trigger: none  # No auto-trigger
 
 pool:
-  name: Default  
+  name: Default
   demands:
-    - agent.name -equals bap-agent  
+    - agent.name -equals bap-agent
+
+variables:
+- group: GitHubAccess  # Contains GITHUB_USERNAME and GITHUB_TOKEN
+- name: GITHUB_REPO
+  value: 'zucisystems-dev/Borderless-workshop-cookbook-and-pilot'
+- name: BRANCH
+  value: 'master'
+- name: IMAGE_NAME
+  value: 'borderless-backend'
+- name: ACR_NAME
+  value: 'youracrname'  # without .azurecr.io
+- name: ACR_LOGIN_SERVER
+  value: 'youracrname.azurecr.io'
 
 steps:
 - script: |
-    python --version
-    pip --version
-  displayName: 'Check Python and Pip Version'
+    echo "Cloning repository..."
+    git clone https://$(GITHUB_USERNAME):$(GITHUB_TOKEN)@github.com/$(GITHUB_REPO).git --branch $(BRANCH)
+    cd Borderless-workshop-cookbook-and-pilot
 
+    echo "Repo structure:"
+    ls -R
+  displayName: 'Clone GitHub Repo'
+
+# Docker login to ACR
 - script: |
-    pip install --upgrade pip
-    pip install -r backend/requirements.txt
-  displayName: 'Install Python Dependencies'
+    echo "Logging in to ACR..."
+    az acr login --name $(ACR_NAME)
+  displayName: 'Login to Azure Container Registry'
+  env:
+    AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_CERTIFICATE_PATH: $(AZURE_CREDENTIALS)
+
+# Docker build
+- script: |
+    echo "Building Docker image..."
+    docker build -t $(IMAGE_NAME):latest -f backend/Dockerfile .
+  displayName: 'Build Docker Image'
+
+# Docker tag
+- script: |
+    echo "Tagging image for ACR..."
+    docker tag $(IMAGE_NAME):latest $(ACR_LOGIN_SERVER)/$(IMAGE_NAME):latest
+  displayName: 'Tag Image for ACR'
+
+# Docker push
+- script: |
+    echo "Pushing image to ACR..."
+    docker push $(ACR_LOGIN_SERVER)/$(IMAGE_NAME):latest
+  displayName: 'Push Image to ACR'
+
+# Docker run
+- script: |
+    echo "Running Docker container..."
+    docker run -d -p 8000:8000 $(ACR_LOGIN_SERVER)/$(IMAGE_NAME):latest
+  displayName: 'Run Docker Container'

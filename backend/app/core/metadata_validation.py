@@ -1,11 +1,6 @@
 import json
 from openai import AzureOpenAI
-from backend.config.dev_config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_API_VERSION,
-    AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_DEPLOYMENT_NAME
-)
+from backend.config.dev_config import *
 from backend.prompts.meta_data_extraction import VALIDATION_PROMPT_TEMPLATE
 
 
