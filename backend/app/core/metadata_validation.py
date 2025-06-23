@@ -1,11 +1,6 @@
 import json
 from openai import AzureOpenAI
-from backend.config.dev_config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_API_VERSION,
-    AZURE_OPENAI_DEPLOYMENT
-)
+from backend.config.dev_config import *
 from backend.prompts.meta_data_extraction import VALIDATION_PROMPT_TEMPLATE
 
 
@@ -16,7 +11,7 @@ class MetadataValidatorAgent:
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             api_version=AZURE_OPENAI_API_VERSION
         )
-        self.model = AZURE_OPENAI_DEPLOYMENT
+        self.model = AZURE_OPENAI_DEPLOYMENT_NAME
 
     def validate_metadata(self, metadata: dict, category: str) -> dict:
         metadata_json = json.dumps(metadata, indent=2)
