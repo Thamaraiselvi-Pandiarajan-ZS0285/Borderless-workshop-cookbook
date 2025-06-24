@@ -544,27 +544,31 @@ async def converse(query:OrchestrateRequest):
     session_manager = AutogenSessionManager(app.state.db_engine, app.state.db_session)
 
     # Create new session
-    conv_id = session_manager.create_session()
+    conv_id =  query.conversation_id or session_manager.create_session()
     print(f"Created session: {conv_id}")
 
     # Get the orchestrator
     orchestrator = session_manager.get_session(conv_id)
+    if not orchestrator:
+        orchestrator = session_manager.load_session(conv_id)
+        if not orchestrator:
+            raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        # Run workflow
+        result = orchestrator.orchestrate(query.message)
 
-    # Run some workflow
-    result = orchestrator.orchestrate(query.message)
+        # Save session state
+        session_manager.save_session(conv_id, metadata={"workflow_type": "email_classification"})
 
-    # Save session
-    session_manager.save_session(conv_id, metadata={"workflow_type": "email_classification"})
+        # Close session if needed
+        session_manager.close_session(conv_id)
 
-    # Close session
-    session_manager.close_session(conv_id)
+        return {
+            "conversation_id": conv_id,
+            "response": result,
+            "status": "success"
+        }
 
-    # Later, load the session
-    loaded_orchestrator = session_manager.load_session(conv_id)
-    if loaded_orchestrator:
-        print("Session loaded successfully!")
-        # Continue conversation
-        result2 = loaded_orchestrator.resume_conversation("Continue processing...")
-
-    return result
-
+    except Exception as e:
+        session_manager.logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

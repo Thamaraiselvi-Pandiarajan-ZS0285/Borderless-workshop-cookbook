@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 # from backend.app.core.base_agent import BaseAgent
 from backend.config.llm_config import LlmConfig
 import asyncio
-from backend.models.buffer_memory_model import ChatMessage, Base
+from backend.models.all_db_models import ChatMessage, Base
 
 
 class MultiAgentBuffer(ABC):

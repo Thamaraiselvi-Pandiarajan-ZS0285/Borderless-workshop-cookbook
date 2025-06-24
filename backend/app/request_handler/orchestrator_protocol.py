@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class OrchestrateRequest(BaseModel):
     message: str
+    conversation_id: int
 
 class WorkflowStage(Enum):
     """Defines workflow stages"""

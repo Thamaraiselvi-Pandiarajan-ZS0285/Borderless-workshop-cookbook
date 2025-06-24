@@ -7,7 +7,7 @@ from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm.session import sessionmaker
 
 from backend.app.core.orchestrator_agent import Orchestrator
-from backend.models.buffer_memory_model import ChatMessage, Base
+from backend.models.all_db_models import ChatMessage, Base
 import logging
 
 
@@ -34,7 +34,7 @@ class AutogenMemoryManager:
                         conversation_id=conversation_id,
                         role=msg.get('role', 'unknown'),
                         content=msg.get('content', ''),
-                        sender=msg.get('name', 'unknown'),
+                        sender=msg.get('name', 'unknown')   ,
                         timestamp=datetime.now(),
                         message_index=idx,
                         metadata=json.dumps(metadata) if metadata else None
@@ -64,10 +64,11 @@ class AutogenMemoryManager:
                         'content': row.content,
                         'name': row.sender
                     }
-                    if row.metadata_in:
+                    if hasattr(row, 'metadata_in') and row.metadata_in:
                         try:
                             metadata = json.loads(row.metadata_in)
-                            msg.update(metadata)
+                            if isinstance(metadata, dict):
+                                msg.update(metadata)
                         except json.JSONDecodeError:
                             pass
                     messages.append(msg)
@@ -150,6 +151,12 @@ class AutogenSessionManager:
             # Load conversation history
             messages = self.memory_manager.load_conversation(conversation_id)
 
+            # Inside load_session before setting chat_messages
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    raise ValueError(f"Invalid message format: {msg}")
+                if 'name' not in msg or 'content' not in msg:
+                    raise ValueError(f"Missing required keys in message: {msg}")
             if not messages:
                 self.logger.warning(f"No messages found for conversation {conversation_id}")
                 return None
@@ -168,7 +175,7 @@ class AutogenSessionManager:
 
             # Add to active sessions
             self.active_sessions[conversation_id] = orchestrator
-
+            self.logger.info(f"Restoring messages: {messages}")
             self.logger.info(f"Loaded session {conversation_id} with {len(messages)} messages")
             return orchestrator
 

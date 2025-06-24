@@ -15,9 +15,10 @@ from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.core.summarization_agent import SummarizationAgent
-from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.request_handler.email_request import EmailClassifyImageRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
+    email_classify_response_via_vlm
 from backend.config.dev_config import *
 from backend.prompts.summarization_prompt import TASK_VARIANTS
 from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
@@ -32,23 +33,25 @@ logger = logging.getLogger(__name__)
 
 
 class  EmailClassificationTool:
-    def __init__(self,email_file: EmailClassificationRequest):
+    def __init__(self):
+        pass
+
+    def __call__(self,email_file: EmailClassifyImageRequest):
         self.email_input = email_file
 
-    def do_classify(self):
-
+    def do_classify_via_vlm(self,request: EmailClassifyImageRequest):
         try:
-            processor = EmailClassifierProcessor()
+            classifier = EmailClassifierProcessor()
             summarizer = SummarizationAgent()
             extractor = AttachmentExtractor()
 
-            full_body = self.email_input.body
+            full_email_content = request.json_data.body
             attachment_summary: str = ""
             email_and_attachment_summary: str = ""
 
-            if self.email_input.hasAttachments:
+            if request.json_data.hasAttachments:
                 # Step 1: Extract raw attachment content
-                attachment_content = extractor.extract_many(self.email_input.attachments)
+                attachment_content = extractor.extract_many(request.json_data.attachments)
 
                 # Step 2: Split into page-wise chunks
                 pages = split_into_pages(attachment_content)
@@ -64,20 +67,28 @@ class  EmailClassificationTool:
                 attachment_summary = summarizer.summarize_text(combined_summaries_text)
 
             # Step 5: Append final summary to the body
-            full_body += "Attachment Summary\n\n" + attachment_summary
-            # Step 6: Process classification
-            email_classification = processor.process_email(self.email_input.subject, full_body)
-
+            full_email_content += "Attachment Summary\n\n" + attachment_summary
+            extracted_texts = []
+            # Step 6: classify the email via vlm
+            for item in request.imagedata:
+                try:
+                    # Resolve image to base64 string
+                    if os.path.exists(item.input_path):
+                        base64_converter = FileToBase64(item.input_path)
+                        base64_image = base64_converter.do_base64_encoding()
+                    else:
+                        if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
+                            raise ValueError("Invalid base64 input or unreadable image path.")
+                        base64_image = item.input_path
+                    extracted_text = classifier.classify_via_vlm(base64_image)
+                    extracted_texts.append(extracted_text)
+                except Exception as e:
+                    logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
             for label, variant in TASK_VARIANTS.items():
-                summary_response = summarizer.summarize_text(full_body, variant)
+                summary_response = summarizer.summarize_text(full_email_content, variant)
                 email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+            return email_classify_response_via_vlm(request, extracted_texts, email_and_attachment_summary)
 
-            return build_email_classifier_response(self.email_input, email_classification, email_and_attachment_summary)
-
-        except JSONDecodeError:
-            raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-        except ValueError as ve:
-            raise HTTPException(status_code=400, detail={"error": str(ve)})
         except Exception as e:
             raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
@@ -143,10 +154,10 @@ class  EmailClassificationTool:
         content_embedding = embedder.embed_text(email_content)
         embedder.ingest_email_for_content("sender@yahoo.com", email_content, content_embedding)
 
-    def test(self):
+    def test(self, email_input: EmailClassifyImageRequest):
         try:
 
-            email_data = self.email_input #.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
+            email_data = self.email_input.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
 
             if not isinstance(email_data, dict):
                 raise ValueError("The uploaded JSON must be an object.")
@@ -171,20 +182,28 @@ class  EmailClassificationTool:
 
             results = paper_itemizer_object.do_paper_itemizer()
             #classification
-            classification_result = self.do_classify()
+            # classification_result = self.do_classify()
+            email_image_request = []
+            summaries = []
+            classify_image_request_data = {"imagedata": [], "json_data": email_file}
 
-            email_image_request= []
             for result in results:
                 input_data = result["encode"]
                 file_extension = result["fileExtension"]
                 file_name = result["fileName"]
-                category = classification_result.classification
+                classify_image_request_data["imagedata"].append(
+                    {"input_path": input_data, "file_name": file_name, "file_extension": file_extension})
+                classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
+                classify_via_llm = self.do_classify_via_vlm(classify_image_request)
+                category = classify_via_llm.classification
+                summary = classify_via_llm.summary
+                summaries.append(summary)
                 email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
 
             email_request = EmailImageRequest(data=email_image_request)
 
             response = self.upload_email_images(email_request)
-            response["summary"] = classification_result.summary
+            # response["summary"] = classification_result.summary
 
             for result in response["results"]:
                 subject = result["extracted_metadata"]["subject"]

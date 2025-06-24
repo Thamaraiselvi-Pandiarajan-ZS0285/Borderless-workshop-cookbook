@@ -3,9 +3,12 @@ import logging
 from typing import Any, List, Dict, Optional
 from autogen import register_function
 import autogen
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm.session import sessionmaker
 
 from backend.app.core.tools.email_parsing_agent import EmailClassificationTool
-from backend.app.request_handler.email_request import EmailClassificationRequest
+from backend.app.core.tools.retrieval_agent import RetrievalTool, retrieval_tool_fn
+from backend.app.request_handler.email_request import *
 from backend.prompts.orchestration_prompt import *
 from autogen.agentchat.groupchat import GroupChat, GroupChatManager
 from backend.config.dev_config import *
@@ -26,14 +29,19 @@ class WorkflowStage(Enum):
     COMPLETION = "completion"
 
 class Orchestrator:
-    def __init__(self, conversation_id: str = None):
+    def __init__(self, conversation_id: str = None, db_engine:Engine = None, db_session:sessionmaker =None):
         self.conversation_id = conversation_id or f"conversation_{hash(str(id(self)))}"
         self.model_name = AZURE_OPENAI_DEPLOYMENT_NAME
         self.max_input_tokens = MAX_INPUT_TOKEN
         self.llm_config = LlmConfig().llm_config
+        self.db_engine = db_engine
+        self.db_session = db_session
 
         # self.workflow_state = WorkflowStage()
         # self.handoff_manager = HandoffManager()
+
+        # Current workflow stage
+        self.current_stage = WorkflowStage.CLASSIFICATION
 
         # Setup logging
         logging.basicConfig(level=logging.INFO)
@@ -81,35 +89,50 @@ class Orchestrator:
 
 
 
+
     def _setup_tools(self):
-        self.email_classification_tool = EmailClassificationTool(email_file=EmailClassificationRequest()).test()
+
+        self.email_classification_tool = EmailClassificationTool()
+        def test_email_tool(email_input: EmailClassifyImageRequest):
+            self.email_classification_tool(email_input)
+            return self.email_classification_tool.test
 
         register_function(
-            self.email_classification_tool,
+            test_email_tool,
             name="email_classification_tool",
             caller=self.email_classification_agent,
             executor=self.user_proxy,
             description="classifies the mail"
         )
 
+        register_function(
+            retrieval_tool_fn,
+            name="retrieval_tool",
+            caller=self.retrieval_agent,
+            executor=self.user_proxy,
+            description="Retrieves the answers from database"
+        )
+
+
+
     def _setup_group_chat(self):
         # all the agents can be initialized here and needs to added the list below
         self.agents = [self.email_classification_agent,
                        self.orchestrator_agent,
+                       self.retrieval_agent,
                        self.user_proxy]
 
         self.group_chat = GroupChat(
             agents=self.agents,
             messages=[],  # Shared message history
             max_round=20,
-            speaker_selection_method="manual",  # Use manual for handoff pattern
-            allow_repeat_speaker=True,
+            speaker_selection_method="auto",  # Use manual for handoff pattern
+            allow_repeat_speaker=None,
             speaker_transitions_type="allowed",
             allowed_or_disallowed_speaker_transitions={
                 self.orchestrator_agent: [self.email_classification_agent],
                 self.email_classification_agent: [self.retrieval_agent, self.orchestrator_agent],
                 self.retrieval_agent: [self.orchestrator_agent],
-                self.analysis_agent: [self.orchestrator_agent],
                 self.user_proxy: [self.orchestrator_agent]
             }
         )
@@ -120,7 +143,6 @@ class Orchestrator:
             llm_config=self.llm_config,
             system_message= f"""
             You are managing an email processing workflow with conversation ID: {self.conversation_id}
-            
             Agent responsibilities:
             - Orchestrator: Manages overall workflow and stage transitions
             - EmailClassifier: Classifies and categorizes emails
@@ -132,8 +154,7 @@ class Orchestrator:
             2. Orchestrator → EmailClassifier for classification
             3. EmailClassifier → RetrievalAgent for information gathering
             4. RetrievalAgent → AnalysisAgent for processing
-            5. AnalysisAgent → Orchestrator for completion
-            
+          
             Monitor for "HANDOFF_TO: [agent_name]" to manage transitions.
             Maintain conversation context and shared memory across all agents.
             """,
@@ -147,7 +168,7 @@ class Orchestrator:
             self.logger.info(f"Initial message: {message}")
 
             # Start the group chat conversation
-            self.user_proxy.initiate_chat(
+            self.orchestrator_agent.initiate_chat(
                 self.group_chat_manager,
                 message=message,
                 max_turns=20,
@@ -160,7 +181,6 @@ class Orchestrator:
                 return final_message.get("content", "No response generated")
 
             return "Orchestration completed successfully"
-
         except Exception as e:
             self.logger.error(f"Error in orchestration: {str(e)}")
             return f"Error occurred during orchestration: {str(e)}"
@@ -182,7 +202,10 @@ class Orchestrator:
             "RETRIEVALAGENT": self.retrieval_agent,
             "USERPROXY": self.user_proxy
         }
-        return name_mapping.get(name.upper())
+        agent = name_mapping.get(name.upper())
+        if not agent:
+            self.logger.warning(f"Agent not found: {name}")
+        return agent
     def get_conversation_history(self) -> List[Dict]:
         """Get the full conversation history"""
         return self.group_chat.messages
@@ -191,9 +214,8 @@ class Orchestrator:
         """Get chat history for a specific agent"""
         agent = self._get_agent_by_name(agent_name)
         if agent and hasattr(agent, 'chat_messages'):
-            print(agent.chat_messages)
-            return agent.chat_messages
-        return agent.chat_messages
+            return agent.chat_messages if agent.chat_messages else []
+        return []
 
     def clear_conversation_history(self):
         """Clear conversation history (if needed)"""
@@ -217,10 +239,45 @@ class Orchestrator:
             return self.orchestrate(message)
         else:
             # Resume with last context
-            if self.group_chat.messages:
-                last_message = self.group_chat.messages[-1]
-                return self.orchestrate(f"Continue from: {last_message.get('content', '')}")
+            history = self.get_conversation_history()
+            if history:
+                last_message = history[-1]
+                if isinstance(last_message, dict):
+                    last_content = last_message.get('content', '')
+                else:
+                    last_content = str(last_message)
+                return self.orchestrate(f"Continue from: {last_content}")
             return "No previous conversation to resume"
+
+    def add_message_to_history(self, message: Dict[str, Any]):
+        """Add a message to the group chat history"""
+        if hasattr(self.group_chat, 'messages'):
+            self.group_chat.messages.append(message)
+
+    def restore_messages(self, messages: List[Dict[str, Any]]):
+        """Restore messages to group chat and individual agents"""
+        try:
+            # Validate messages format
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    raise ValueError(f"Invalid message format: {msg}")
+                if 'content' not in msg:
+                    raise ValueError(f"Missing required 'content' key in message: {msg}")
+
+            # Restore to group chat
+            if hasattr(self.group_chat, 'messages'):
+                self.group_chat.messages = messages.copy()
+
+            # Restore to individual agents
+            for agent in self.agents:
+                if hasattr(agent, 'chat_messages'):
+                    agent.chat_messages = messages.copy()
+
+            self.logger.info(f"Restored {len(messages)} messages to conversation {self.conversation_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error restoring messages: {str(e)}")
+            raise
 
 
 
