@@ -8,10 +8,8 @@ import re
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
-
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
-
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.embedder import Embedder
@@ -30,6 +28,7 @@ from backend.config.db_config import *
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.db.db_helper.db_utils import Dbutils
+from backend.memory.memory_manager import SharedMemoryManager
 from backend.models.all_db_models import Base
 from backend.prompts.summarization_prompt import TASK_VARIANTS
 from backend.utils.base_64_operations import Base64Utils
@@ -64,6 +63,7 @@ async def lifespan(application: FastAPI):
 
         application.state.db_engine = db_init.db_create_engin()
         application.state.db_session = db_init.db_create_session()
+        application.state.memory_manager = SharedMemoryManager(application.state.db_session)
 
         logger.info("Database engine and session created successfully.")
         logger.info("Initializing database helper...")
@@ -263,53 +263,90 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         logger.exception("❌ Unexpected error during PDF conversion.")
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
+
 @app.post("/api/classify_email")
 def do_classify(email: EmailClassificationRequest):
+    memory_manager: SharedMemoryManager = app.state.memory_manager
 
     try:
         processor = EmailClassifierProcessor()
         summarizer = SummarizationAgent()
         extractor = AttachmentExtractor()
 
+        # Step 1: Initial body and summaries
         full_body = email.body
-        attachment_summary:str=""
-        email_and_attachment_summary:str=""
+        attachment_summary = ""
+        email_and_attachment_summary = ""
 
+        # Step 2: Handle attachments
         if email.hasAttachments:
-            # Step 1: Extract raw attachment content
             attachment_content = extractor.extract_many(email.attachments)
-
-            # Step 2: Split into page-wise chunks
             pages = split_into_pages(attachment_content)
 
-            # Step 3: Summarize each page individually
+            # Summarize each page
             page_summaries = []
             for idx, page in enumerate(pages):
                 summary = summarizer.summarize_text(page)
-                page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
+                page_summaries.append(f"Page {idx + 1} Summary:\n{summary}")
 
-            # Step 4: Generate final summary from all page summaries
             combined_summaries_text = "\n\n".join(page_summaries)
             attachment_summary = summarizer.summarize_text(combined_summaries_text)
 
-        # Step 5: Append final summary to the body
-        full_body += "Attachment Summary\n\n" + attachment_summary
-        # Step 6: Process classification
+        # Step 3: Update full body with attachment summary
+        full_body += "\n\nAttachment Summary:\n\n" + attachment_summary
+
+        # Step 4: Email classification
         email_classification = processor.process_email(email.subject, full_body)
 
+        # Step 5: Create email + attachment summaries by task
         for label, variant in TASK_VARIANTS.items():
             summary_response = summarizer.summarize_text(full_body, variant)
             email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
 
-        return build_email_classifier_response(email,email_classification,email_and_attachment_summary)
+        # Step 6: Get currentstep (based on historical logs)
+        previous_logs = memory_manager.get_logs(email.session_id)
+        current_step = len(previous_logs) + 1
+
+        # Step 7: Build context for storage
+        context = {
+            "subject": email.subject,
+            "classification": email_classification,
+            "attachment_summary": attachment_summary,
+            "topic": email.subject.split(" ")[0] if email.subject else "email"
+        }
+
+        # Step 8: Save interaction log
+        memory_manager.log_interaction(
+            session_id=email.session_id,
+            agent_name="email_classifier",
+            step=current_step,
+            input_text=email.subject + "\n\n" + email.body,
+            output_text=email_classification + "\n\n" + email_and_attachment_summary,
+            context=context
+        )
+
+        # Step 9: Return response
+        return build_email_classifier_response(
+            email,
+            email_classification,
+            email_and_attachment_summary
+        )
 
     except JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Invalid response format from the LLM"}
+        )
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(ve)}
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
-
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "details": str(e)}
+        )
 
 @app.post("/api/extraction/metadata_extractor")
 def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:

@@ -9,6 +9,7 @@ class Attachment(BaseModel):
     contentBytes: str
 
 class EmailClassificationRequest(BaseModel):
+    session_id: Optional[str] = None
     sender: str
     received_at:datetime
     subject: str
