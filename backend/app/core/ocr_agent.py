@@ -8,6 +8,7 @@ from backend.prompts.meta_data_extraction import RFP_EXTRACTION_PROMPT,BID_WIN_E
 # Assume these constants are imported from your config
 from backend.config.dev_config import *
 
+
 logger = logging.getLogger(__name__)
 
 
