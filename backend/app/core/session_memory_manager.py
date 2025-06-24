@@ -1,237 +1,347 @@
 import json
 import uuid
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
+import asyncio
+import logging
 
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm.session import sessionmaker
-
+from autogen_core.memory import ListMemory, MemoryContent, MemoryMimeType
+from autogen_agentchat.messages import TextMessage, HandoffMessage
 from backend.app.core.orchestrator_agent import Orchestrator
 from backend.models.all_db_models import ChatMessage, Base
-import logging
 
 
-class AutogenMemoryManager:
-    """Memory manager that works with Autogen's built-in chat_messages"""
+class DatabaseMemory(ListMemory):
+    """Custom memory that persists to database while maintaining Autogen compatibility"""
 
-    def __init__(self, db_engine: Engine, db_session: sessionmaker):
+    def __init__(self, conversation_id: str, db_engine: Engine, db_session: sessionmaker):
+        super().__init__()
+        self.conversation_id = conversation_id
         self.db_engine = db_engine
         self.db_session = db_session
-        Base.metadata.create_all(bind=self.db_engine)
         self.logger = logging.getLogger(__name__)
 
-    def save_conversation(self, conversation_id: str, messages: List[Dict[str, Any]],
-                          metadata: Optional[Dict] = None):
-        """Save conversation messages to database"""
-        try:
-            with self.db_session() as session:
-                # Clear existing messages for this conversation
-                session.query(ChatMessage).filter_by(conversation_id=conversation_id).delete()
+        # Load existing messages from database
+        self._load_from_database()
 
-                # Save new messages
-                for idx, msg in enumerate(messages):
-                    db_msg = ChatMessage(
-                        conversation_id=conversation_id,
-                        role=msg.get('role', 'unknown'),
-                        content=msg.get('content', ''),
-                        sender=msg.get('name', 'unknown')   ,
-                        timestamp=datetime.now(),
-                        message_index=idx,
-                        metadata=json.dumps(metadata) if metadata else None
-                    )
-                    session.add(db_msg)
-
-                session.commit()
-                self.logger.info(f"Saved {len(messages)} messages for conversation {conversation_id}")
-
-        except Exception as e:
-            self.logger.error(f"Error saving conversation: {str(e)}")
-            raise
-
-    def load_conversation(self, conversation_id: str) -> List[Dict[str, Any]]:
-        """Load conversation messages from database"""
+    def _load_from_database(self):
+        """Load existing messages from database into memory"""
         try:
             with self.db_session() as session:
                 rows = (session.query(ChatMessage)
-                        .filter_by(conversation_id=conversation_id)
+                        .filter_by(conversation_id=self.conversation_id)
                         .order_by(ChatMessage.message_index)
                         .all())
 
-                messages = []
+                for row in rows:
+                    # Convert database row to MemoryContent
+                    memory_content = MemoryContent(
+                        content=row.content,
+                        mime_type=MemoryMimeType.TEXT
+                    )
+
+                    # Add metadata if available
+                    if row.metadata_in:
+                        try:
+                            metadata = json.loads(row.metadata_in)
+                            memory_content.metadata = metadata
+                        except json.JSONDecodeError:
+                            pass
+
+                    super().add(memory_content)
+
+                self.logger.info(f"Loaded {len(rows)} messages from database for conversation {self.conversation_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error loading messages from database: {str(e)}")
+
+    def add(self, memory_content: MemoryContent) -> None:
+        """Add memory content and persist to database"""
+        super().add(memory_content)
+        self._save_to_database(memory_content)
+
+    def _save_to_database(self, memory_content: MemoryContent, sender: str = "system"):
+        """Save memory content to database"""
+        try:
+            with self.db_session() as session:
+                # Get the next message index
+                max_index = (session.query(ChatMessage.message_index)
+                             .filter_by(conversation_id=self.conversation_id)
+                             .order_by(ChatMessage.message_index.desc())
+                             .first())
+
+                next_index = (max_index[0] + 1) if max_index and max_index[0] is not None else 0
+
+                # Determine role and sender from metadata or defaults
+                role = "assistant"
+                if hasattr(memory_content, 'metadata') and memory_content.metadata:
+                    role = memory_content.metadata.get('role', 'assistant')
+                    sender = memory_content.metadata.get('sender', sender)
+
+                db_msg = ChatMessage(
+                    conversation_id=self.conversation_id,
+                    role=role,
+                    content=str(memory_content.content),
+                    sender=sender,
+                    message_index=next_index,
+                    metadata_in=json.dumps(memory_content.metadata) if hasattr(memory_content,
+                                                                               'metadata') and memory_content.metadata else None,
+                    created_on=datetime.now()
+                )
+
+                session.add(db_msg)
+                session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Error saving to database: {str(e)}")
+
+
+class SharedMemoryManager:
+    """Manages shared memory across all agents in a conversation"""
+
+    def __init__(self, conversation_id: str, db_engine: Engine, db_session: sessionmaker):
+        self.conversation_id = conversation_id
+        self.db_engine = db_engine
+        self.db_session = db_session
+        self.logger = logging.getLogger(__name__)
+
+        # Create shared memory instance
+        self.shared_memory = DatabaseMemory(conversation_id, db_engine, db_session)
+
+        # Track agent-specific memory contexts
+        self.agent_memories: Dict[str, DatabaseMemory] = {}
+
+    def get_shared_memory(self) -> DatabaseMemory:
+        """Get the shared memory instance for all agents"""
+        return self.shared_memory
+
+    def get_agent_memory(self, agent_name: str) -> DatabaseMemory:
+        """Get or create agent-specific memory"""
+        if agent_name not in self.agent_memories:
+            # Create agent-specific conversation ID
+            agent_conversation_id = f"{self.conversation_id}_{agent_name}"
+            self.agent_memories[agent_name] = DatabaseMemory(
+                agent_conversation_id, self.db_engine, self.db_session
+            )
+        return self.agent_memories[agent_name]
+
+    def add_message_to_shared_memory(self, content: str, sender: str, role: str = "assistant", metadata: Dict = None):
+        """Add a message to shared memory with proper metadata"""
+        memory_content = MemoryContent(
+            content=content,
+            mime_type=MemoryMimeType.TEXT
+        )
+
+        # Add metadata
+        if metadata is None:
+            metadata = {}
+        metadata.update({
+            'sender': sender,
+            'role': role,
+            'timestamp': datetime.now().isoformat()
+        })
+        memory_content.metadata = metadata
+
+        self.shared_memory.add(memory_content)
+
+    def get_conversation_history(self) -> List[Dict[str, Any]]:
+        """Get conversation history in a format suitable for agents"""
+        try:
+            with self.db_session() as session:
+                rows = (session.query(ChatMessage)
+                        .filter_by(conversation_id=self.conversation_id)
+                        .order_by(ChatMessage.message_index)
+                        .all())
+
+                history = []
                 for row in rows:
                     msg = {
                         'role': row.role,
                         'content': row.content,
-                        'name': row.sender
+                        'sender': row.sender,
+                        'timestamp': row.created_on.isoformat() if row.created_on else None
                     }
-                    if hasattr(row, 'metadata_in') and row.metadata_in:
+
+                    if row.metadata_in:
                         try:
                             metadata = json.loads(row.metadata_in)
-                            if isinstance(metadata, dict):
-                                msg.update(metadata)
+                            msg.update(metadata)
                         except json.JSONDecodeError:
                             pass
-                    messages.append(msg)
 
-                self.logger.info(f"Loaded {len(messages)} messages for conversation {conversation_id}")
-                return messages
+                    history.append(msg)
+
+                return history
 
         except Exception as e:
-            self.logger.error(f"Error loading conversation: {str(e)}")
+            self.logger.error(f"Error getting conversation history: {str(e)}")
             return []
 
-    def get_conversation_summary(self, conversation_id: str) -> Dict[str, Any]:
-        """Get conversation summary with metadata"""
+    def clear_conversation(self):
+        """Clear all conversation data"""
         try:
             with self.db_session() as session:
-                messages = (session.query(ChatMessage)
-                            .filter_by(conversation_id=conversation_id)
-                            .order_by(ChatMessage.created_on)
-                            .all())
+                session.query(ChatMessage).filter_by(conversation_id=self.conversation_id).delete()
 
-                if not messages:
-                    return {}
+                # Also clear agent-specific conversations
+                for agent_name in self.agent_memories.keys():
+                    agent_conversation_id = f"{self.conversation_id}_{agent_name}"
+                    session.query(ChatMessage).filter_by(conversation_id=agent_conversation_id).delete()
+
+                session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Error clearing conversation: {str(e)}")
+
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory statistics for monitoring"""
+        try:
+            with self.db_session() as session:
+                total_messages = (session.query(ChatMessage)
+                                  .filter_by(conversation_id=self.conversation_id)
+                                  .count())
+
+                agent_counts = {}
+                for agent_name in self.agent_memories.keys():
+                    agent_conversation_id = f"{self.conversation_id}_{agent_name}"
+                    count = (session.query(ChatMessage)
+                             .filter_by(conversation_id=agent_conversation_id)
+                             .count())
+                    agent_counts[agent_name] = count
 
                 return {
-                    'conversation_id': conversation_id,
-                    'message_count': len(messages),
-                    'start_time': messages[0].timestamp.isoformat(),
-                    'last_activity': messages[-1].timestamp.isoformat(),
-                    'participants': list(set(msg.sender for msg in messages))
+                    'conversation_id': self.conversation_id,
+                    'total_shared_messages': total_messages,
+                    'agent_specific_messages': agent_counts,
+                    'shared_memory_size': len(self.shared_memory.get_all()),
+                    'last_updated': datetime.now().isoformat()
                 }
 
         except Exception as e:
-            self.logger.error(f"Error getting conversation summary: {str(e)}")
+            self.logger.error(f"Error getting memory stats: {str(e)}")
             return {}
-
-    def delete_conversation(self, conversation_id: str):
-        """Delete conversation from database"""
-        try:
-            with self.db_session() as session:
-                deleted_count = (session.query(ChatMessage)
-                                 .filter_by(conversation_id=conversation_id)
-                                 .delete())
-                session.commit()
-                self.logger.info(f"Deleted {deleted_count} messages for conversation {conversation_id}")
-
-        except Exception as e:
-            self.logger.error(f"Error deleting conversation: {str(e)}")
-            raise
 
 
 class AutogenSessionManager:
-    """Session manager for Autogen workflows with persistence"""
+    """Enhanced session manager with integrated memory management"""
 
     def __init__(self, db_engine: Engine, db_session: sessionmaker):
-        self.memory_manager = AutogenMemoryManager(db_engine, db_session)
+        self.db_engine = db_engine
+        self.db_session = db_session
         self.active_sessions: Dict[str, 'Orchestrator'] = {}
+        self.memory_managers: Dict[str, SharedMemoryManager] = {}
         self.logger = logging.getLogger(__name__)
 
+        # Ensure database tables exist
+        Base.metadata.create_all(bind=self.db_engine)
+
     def create_session(self, conversation_id: str = None) -> str:
-        """Create new session"""
+        """Create new session with memory management"""
         if conversation_id is None:
             conversation_id = str(uuid.uuid4())
 
-        # Import here to avoid circular imports
-        from backend.app.core.orchestrator_agent import Orchestrator
+        # Create memory manager for this conversation
+        memory_manager = SharedMemoryManager(conversation_id, self.db_engine, self.db_session)
+        self.memory_managers[conversation_id] = memory_manager
 
-        orchestrator = Orchestrator(conversation_id=conversation_id)
+        # Create orchestrator with memory
+        orchestrator = Orchestrator(
+            conversation_id=conversation_id,
+            db_engine=self.db_engine,
+            db_session=self.db_session,
+            memory_manager=memory_manager
+        )
+
         self.active_sessions[conversation_id] = orchestrator
-
-        self.logger.info(f"Created new session: {conversation_id}")
+        self.logger.info(f"Created new session with memory: {conversation_id}")
         return conversation_id
 
     def get_session(self, conversation_id: str) -> Optional['Orchestrator']:
         """Get existing session"""
         return self.active_sessions.get(conversation_id)
 
+    def get_memory_manager(self, conversation_id: str) -> Optional[SharedMemoryManager]:
+        """Get memory manager for a conversation"""
+        return self.memory_managers.get(conversation_id)
+
     def load_session(self, conversation_id: str) -> Optional['Orchestrator']:
-        """Load session from database"""
+        """Load session from database with memory restoration"""
         try:
-            # Load conversation history
-            messages = self.memory_manager.load_conversation(conversation_id)
+            # Create memory manager and load existing data
+            memory_manager = SharedMemoryManager(conversation_id, self.db_engine, self.db_session)
+            self.memory_managers[conversation_id] = memory_manager
 
-            # Inside load_session before setting chat_messages
-            for msg in messages:
-                if not isinstance(msg, dict):
-                    raise ValueError(f"Invalid message format: {msg}")
-                if 'name' not in msg or 'content' not in msg:
-                    raise ValueError(f"Missing required keys in message: {msg}")
-            if not messages:
-                self.logger.warning(f"No messages found for conversation {conversation_id}")
-                return None
-
-            # Create new orchestrator instance
+            # Create orchestrator with restored memory
             from backend.app.core.orchestrator_agent import Orchestrator
-            orchestrator = Orchestrator(conversation_id=conversation_id)
+            orchestrator = Orchestrator(
+                conversation_id=conversation_id,
+                db_engine=self.db_engine,
+                db_session=self.db_session,
+                memory_manager=memory_manager
+            )
 
-            # Restore chat history to all agents
-            for agent in orchestrator.agents:
-                if hasattr(agent, 'chat_messages'):
-                    agent.chat_messages = messages.copy()
-
-            # Restore group chat messages
-            orchestrator.group_chat.messages = messages.copy()
-
-            # Add to active sessions
             self.active_sessions[conversation_id] = orchestrator
-            self.logger.info(f"Restoring messages: {messages}")
-            self.logger.info(f"Loaded session {conversation_id} with {len(messages)} messages")
+
+            # Get memory stats for logging
+            stats = memory_manager.get_memory_stats()
+            self.logger.info(f"Loaded session {conversation_id} with {stats.get('total_shared_messages', 0)} messages")
+
             return orchestrator
 
         except Exception as e:
             self.logger.error(f"Error loading session: {str(e)}")
             return None
 
-    def save_session(self, conversation_id: str, metadata: Optional[Dict] = None):
-        """Save session to database"""
-        orchestrator = self.active_sessions.get(conversation_id)
-        if not orchestrator:
-            self.logger.warning(f"Session {conversation_id} not found in active sessions")
-            return
-
+    def save_session(self, conversation_id: str):
+        """Save session - memory is auto-saved, but we can trigger manual sync"""
         try:
-            # Get messages from group chat (Autogen's built-in message history)
-            messages = orchestrator.group_chat.messages
-
-            # Add metadata
-            if metadata is None:
-                metadata = {}
-            metadata.update({
-                'current_stage': orchestrator.current_stage.value,
-                'agent_count': len(orchestrator.agents),
-                'saved_at': datetime.utcnow().isoformat()
-            })
-
-            # Save to database
-            self.memory_manager.save_conversation(conversation_id, messages, metadata)
-            self.logger.info(f"Saved session {conversation_id}")
+            memory_manager = self.memory_managers.get(conversation_id)
+            if memory_manager:
+                stats = memory_manager.get_memory_stats()
+                self.logger.info(f"Session {conversation_id} memory stats: {stats}")
 
         except Exception as e:
             self.logger.error(f"Error saving session: {str(e)}")
-            raise
 
-    def close_session(self, conversation_id: str, save_before_close: bool = True):
-        """Close and optionally save session"""
-        if save_before_close:
-            self.save_session(conversation_id)
-
+    def close_session(self, conversation_id: str):
+        """Close session and cleanup memory managers"""
         if conversation_id in self.active_sessions:
             del self.active_sessions[conversation_id]
-            self.logger.info(f"Closed session {conversation_id}")
+
+        if conversation_id in self.memory_managers:
+            del self.memory_managers[conversation_id]
+
+        self.logger.info(f"Closed session {conversation_id}")
 
     def list_conversations(self) -> List[Dict[str, Any]]:
-        """List all conversations with summaries"""
+        """List all conversations with memory statistics"""
         try:
-            with self.memory_manager.db_session() as session:
+            with self.db_session() as session:
                 conversations = (session.query(ChatMessage.conversation_id)
                                  .distinct()
                                  .all())
 
                 summaries = []
                 for (conv_id,) in conversations:
-                    summary = self.memory_manager.get_conversation_summary(conv_id)
-                    if summary:
+                    # Skip agent-specific conversation IDs
+                    if '_' in conv_id and len(conv_id.split('_')) > 5:  # UUID format check
+                        continue
+
+                    messages = (session.query(ChatMessage)
+                                .filter_by(conversation_id=conv_id)
+                                .order_by(ChatMessage.created_on)
+                                .all())
+
+                    if messages:
+                        summary = {
+                            'conversation_id': conv_id,
+                            'message_count': len(messages),
+                            'start_time': messages[0].created_on.isoformat(),
+                            'last_activity': messages[-1].created_on.isoformat(),
+                            'participants': list(set(msg.sender for msg in messages if msg.sender))
+                        }
                         summaries.append(summary)
 
                 return summaries
@@ -239,8 +349,3 @@ class AutogenSessionManager:
         except Exception as e:
             self.logger.error(f"Error listing conversations: {str(e)}")
             return []
-
-    def get_active_sessions(self) -> List[str]:
-        """Get list of active session IDs"""
-        return list(self.active_sessions.keys())
-

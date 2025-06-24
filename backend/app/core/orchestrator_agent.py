@@ -26,6 +26,7 @@ from autogen_core.model_context import UnboundedChatCompletionContext
 from autogen.agentchat import ConversableAgent
 from backend.prompts.retrieval_prompt import RETRIEVAL_PROMPT
 
+
 class WorkflowStage(Enum):
     CLASSIFICATION = "classification"
     RETRIEVAL = "retrieval"
@@ -55,7 +56,7 @@ class Orchestrator:
 
         # Initialize agents
         self._initialize_agents()
-        self._setup_tools()
+        # self._setup_tools()
 
         # Setup group chat with shared memory
         self._setup_team_chat()
@@ -86,6 +87,7 @@ class Orchestrator:
             2. Coordinate handoffs between agents
             3. Monitor progress and ensure completion
             
+            Determine whether the input is JSON (email classification request) or plain text (retrieval request).
             Use HANDOFF messages to transfer control to specific agents.
             Current stage: {self.current_stage.value}
             """,
@@ -102,6 +104,7 @@ class Orchestrator:
                             You are responsible for classifying emails in conversation: {self.conversation_id}
                             where you also will do the indexing and ingest the embeddings along with the data to the database
                             After classification, hand off to the retrieval agent for context gathering from db.
+                            Expect JSON-formatted email data.
                             """,
             tools=self._get_classification_tools(),
             memory=[self.user_memory]
@@ -123,13 +126,13 @@ class Orchestrator:
     def _get_classification_tools(self):
         """Get tools for email classification agent"""
 
-        async def email_classification_tool(email_input: Dict[str,Any]) -> str:
+        async def email_classification_tool(email_input: EmailClassifyImageRequest) -> str:
             """Classify the email content"""
             try:
                 # Convert string input to proper request format if needed
-                classification_request = EmailClassifyImageRequest(content=email_input)
+                # classification_request = EmailClassifyImageRequest()
                 tool = EmailClassificationTool()
-                result = tool(classification_request)
+                result = tool(email_input)
                 return f"Email classified successfully: {result}"
             except Exception as e:
                 return f"Classification error: {str(e)}"
@@ -148,9 +151,6 @@ class Orchestrator:
                 return f"Retrieval error: {str(e)}"
         return [retrieval_tool]
 
-    # def _setup_tools(self):
-    #     """Setup tools for agents - kept for compatibility"""
-    #     self.email_classification_tool = EmailClassificationTool()
 
     def _setup_team_chat(self):
         """Setup the team chat for agent coordination"""
@@ -169,15 +169,10 @@ class Orchestrator:
         self.team_chat = SelectorGroupChat(
             participants=self.agents,
             termination_condition=self.termination_condition,
-            max_turns=2,
+            max_turns=5,
             model_client=self.model_client
         )
 
-        # Alternative: Setup Swarm for more dynamic handoffs
-        # self.swarm_chat = Swarm(
-        #     participants=self.agents,
-        #     termination_condition=self.termination_condition
-        # )
 
     async def orchestrate_async(self, message: str) -> str:
         """Async orchestration method using team chat"""
@@ -189,24 +184,28 @@ class Orchestrator:
             initial_message = TextMessage(
                 content=f"""
                 Here is the initial user query for conversation {self.conversation_id}:
-
                 {message}
-
                 Please begin with email classification, then proceed with retrieval and analysis based on the input query
-                """,
-                source=ORCHESTRATOR_AGENT_NAME
+                """,source=ORCHESTRATOR_AGENT_NAME
             )
 
             # Run the team chat
-            result_stream = self.team_chat.run_stream(task=initial_message)
+            result = await self.team_chat.run(task=initial_message)
 
             final_response = ""
-            async for message in result_stream:
-                if hasattr(message, 'content'):
-                    final_response = message.content
+            # Process the stream
+            if hasattr(result, "messages") and len(result.messages) > 0:
+                last_message = result.messages[-1]
+                if isinstance(last_message, TextMessage):
+                    final_response = last_message.content
+
+
+            # async for message in result_stream:
+            #     if hasattr(message, 'content'):
+            #         final_response = message.content
                     # self.logger.info(f"Received message: {message.content[:100]}...")
 
-            return final_response or "Orchestration completed successfully"
+            return final_response
 
         except Exception as e:
             self.logger.error(f"Error in async orchestration: {str(e)}")

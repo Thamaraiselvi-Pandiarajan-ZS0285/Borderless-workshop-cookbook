@@ -564,8 +564,12 @@ async def run_orchestrator(request: OrchestrateRequest):
         orchestrator = Orchestrator(conversation_id=request.conversation_id)
 
         # Run synchronous wrapper in thread pool
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, orchestrator.orchestrate, request.message)
+        # loop = asyncio.get_event_loop()
+        # response = await loop.run_in_executor(None, orchestrator.orchestrate, request.message)
+
+        # Call the async method directly
+        response = await orchestrator.orchestrate_async(request.message)
+
 
         return {
             "response": response,
