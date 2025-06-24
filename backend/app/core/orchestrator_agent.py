@@ -126,15 +126,9 @@ class Orchestrator:
             agents=self.agents,
             messages=[],  # Shared message history
             max_round=20,
-            speaker_selection_method="auto",  # Use manual for handoff pattern
-            allow_repeat_speaker=None,
-            speaker_transitions_type="allowed",
-            allowed_or_disallowed_speaker_transitions={
-                self.orchestrator_agent: [self.email_classification_agent],
-                self.email_classification_agent: [self.retrieval_agent, self.orchestrator_agent],
-                self.retrieval_agent: [self.orchestrator_agent],
-                self.user_proxy: [self.orchestrator_agent]
-            }
+            speaker_selection_method="auto",
+            allow_repeat_speaker=False,
+            speaker_transitions_type="allowed"
         )
 
         # Group Chat Manager with handoff logic
@@ -185,99 +179,7 @@ class Orchestrator:
             self.logger.error(f"Error in orchestration: {str(e)}")
             return f"Error occurred during orchestration: {str(e)}"
 
-    def _parse_handoff(self, message: str) -> Optional[str]:
-        """Parse handoff instruction from message"""
-        if "HANDOFF_TO:" in message.upper():
-            parts = message.upper().split("HANDOFF_TO:")
-            if len(parts) > 1:
-                target_agent = parts[1].strip().split()[0]
-                return target_agent
-        return None
 
-    def _get_agent_by_name(self, name: str) -> Optional[ConversableAgent]:
-        """Get agent by name"""
-        name_mapping = {
-            "ORCHESTRATOR": self.orchestrator_agent,
-            "EMAILCLASSIFIER": self.email_classification_agent,
-            "RETRIEVALAGENT": self.retrieval_agent,
-            "USERPROXY": self.user_proxy
-        }
-        agent = name_mapping.get(name.upper())
-        if not agent:
-            self.logger.warning(f"Agent not found: {name}")
-        return agent
-    def get_conversation_history(self) -> List[Dict]:
-        """Get the full conversation history"""
-        return self.group_chat.messages
-
-    def get_agent_chat_history(self, agent_name: str) -> List[Dict]:
-        """Get chat history for a specific agent"""
-        agent = self._get_agent_by_name(agent_name)
-        if agent and hasattr(agent, 'chat_messages'):
-            return agent.chat_messages if agent.chat_messages else []
-        return []
-
-    def clear_conversation_history(self):
-        """Clear conversation history (if needed)"""
-        self.group_chat.messages.clear()
-        for agent in self.agents:
-            if hasattr(agent, 'chat_messages'):
-                agent.chat_messages.clear()
-
-    def get_current_stage(self) -> WorkflowStage:
-        """Get current workflow stage"""
-        return self.current_stage
-
-    def set_stage(self, stage: WorkflowStage):
-        """Set current workflow stage"""
-        self.current_stage = stage
-        self.logger.info(f"Workflow stage updated to: {stage.value}")
-
-    def resume_conversation(self, message: str = None) -> str:
-        """Resume existing conversation with optional new message"""
-        if message:
-            return self.orchestrate(message)
-        else:
-            # Resume with last context
-            history = self.get_conversation_history()
-            if history:
-                last_message = history[-1]
-                if isinstance(last_message, dict):
-                    last_content = last_message.get('content', '')
-                else:
-                    last_content = str(last_message)
-                return self.orchestrate(f"Continue from: {last_content}")
-            return "No previous conversation to resume"
-
-    def add_message_to_history(self, message: Dict[str, Any]):
-        """Add a message to the group chat history"""
-        if hasattr(self.group_chat, 'messages'):
-            self.group_chat.messages.append(message)
-
-    def restore_messages(self, messages: List[Dict[str, Any]]):
-        """Restore messages to group chat and individual agents"""
-        try:
-            # Validate messages format
-            for msg in messages:
-                if not isinstance(msg, dict):
-                    raise ValueError(f"Invalid message format: {msg}")
-                if 'content' not in msg:
-                    raise ValueError(f"Missing required 'content' key in message: {msg}")
-
-            # Restore to group chat
-            if hasattr(self.group_chat, 'messages'):
-                self.group_chat.messages = messages.copy()
-
-            # Restore to individual agents
-            for agent in self.agents:
-                if hasattr(agent, 'chat_messages'):
-                    agent.chat_messages = messages.copy()
-
-            self.logger.info(f"Restored {len(messages)} messages to conversation {self.conversation_id}")
-
-        except Exception as e:
-            self.logger.error(f"Error restoring messages: {str(e)}")
-            raise
 
 
 

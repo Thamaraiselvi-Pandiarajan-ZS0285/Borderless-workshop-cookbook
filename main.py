@@ -18,6 +18,7 @@ from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
+from backend.app.core.orchestrator_agent import Orchestrator
 from backend.app.core.paper_itemizer import PaperItemizer
 from backend.app.core.session_memory_manager import AutogenSessionManager
 from backend.app.core.user_query_handler import UserQueryAgent
