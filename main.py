@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import datetime
 import logging
 import os
 import uuid
@@ -8,7 +10,7 @@ import re
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
-
+from autogen_agentchat.messages import TextMessage
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -20,7 +22,6 @@ from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.orchestrator_agent import Orchestrator
 from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.core.session_memory_manager import AutogenSessionManager
 from backend.app.core.user_query_handler import UserQueryAgent
 from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
@@ -540,36 +541,35 @@ async def user_query(user_query: str, top_k: int=10):
 
     return final_response
 
-@app.post("/api/memory")
-async def converse(query:OrchestrateRequest):
-    session_manager = AutogenSessionManager(app.state.db_engine, app.state.db_session)
 
-    # Create new session
-    conv_id =  query.conversation_id or session_manager.create_session()
-    print(f"Created session: {conv_id}")
+@app.post("/orchestrate")
+async def run_orchestrator(request: OrchestrateRequest):
+    """
+    Endpoint to trigger orchestration workflow.
 
-    # Get the orchestrator
-    orchestrator = session_manager.get_session(conv_id)
-    if not orchestrator:
-        orchestrator = session_manager.load_session(conv_id)
-        if not orchestrator:
-            raise HTTPException(status_code=404, detail="Session not found")
+    Input format:
+    {
+        "message": "Your input text here",
+        "conversation_id": "optional_conversation_id"
+    }
+
+    Output:
+    {
+        "response": "Result from orchestrator",
+        "conversation_id": "ID used for this interaction"
+    }
+    """
     try:
-        # Run workflow
-        result = orchestrator.orchestrate(query.message)
+        # Instantiate Orchestrator
+        orchestrator = Orchestrator(conversation_id=request.conversation_id)
 
-        # Save session state
-        session_manager.save_session(conv_id, metadata={"workflow_type": "email_classification"})
-
-        # Close session if needed
-        session_manager.close_session(conv_id)
+        # Run synchronous wrapper in thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, orchestrator.orchestrate, request.message)
 
         return {
-            "conversation_id": conv_id,
-            "response": result,
-            "status": "success"
+            "response": response,
+            "conversation_id": orchestrator.conversation_id
         }
-
     except Exception as e:
-        session_manager.logger.error(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return {"error": str(e)}
