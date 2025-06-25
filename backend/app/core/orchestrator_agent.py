@@ -174,7 +174,7 @@ class Orchestrator:
                         content=error_msg,
                         sender=EMAIL_CLASSIFIER_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "email_classification", "stage": "classification", "error": True,"content" : e}
+                        metadata={"tool_used": "email_classification", "stage": "classification", "error": True,"content" : str(e)}
                     )
 
                 return error_msg
@@ -206,7 +206,7 @@ class Orchestrator:
                         content=error_msg,
                         sender=RETRIEVAL_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "retrieval", "stage": "retrieval", "error": True, "content" : e}
+                        metadata={"tool_used": "retrieval", "stage": "retrieval", "error": True, "content" : str(e)}
                     )
 
                 return error_msg

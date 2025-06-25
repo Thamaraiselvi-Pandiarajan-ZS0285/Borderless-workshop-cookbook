@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, cast
 from datetime import datetime
 import asyncio
 import logging
@@ -39,14 +39,14 @@ class DatabaseMemory(ListMemory):
                 for row in rows:
                     # Convert database row to MemoryContent
                     memory_content = MemoryContent(
-                        content=row.content,
+                        content=cast(str, row.content),
                         mime_type=MemoryMimeType.TEXT
                     )
 
                     # Add metadata if available
                     if row.metadata_in:
                         try:
-                            metadata = json.loads(row.metadata_in)
+                            metadata = json.loads(cast(str, row.metadata_in))
                             memory_content.metadata = metadata
                         except json.JSONDecodeError:
                             pass
@@ -175,7 +175,7 @@ class SharedMemoryManager:
 
                     if row.metadata_in:
                         try:
-                            metadata = json.loads(row.metadata_in)
+                            metadata = json.loads(cast(str,row.metadata_in))
                             msg.update(metadata)
                         except json.JSONDecodeError:
                             pass
