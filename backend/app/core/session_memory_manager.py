@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 import asyncio
 import logging
+from autogen_core import CancellationToken
 
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm.session import sessionmaker
@@ -57,10 +58,15 @@ class DatabaseMemory(ListMemory):
         except Exception as e:
             self.logger.error(f"Error loading messages from database: {str(e)}")
 
-    async def add(self, memory_content: MemoryContent) -> None:
-        """Add memory content and persist to database"""
-        await super().add(memory_content)
-        self._save_to_database(memory_content)
+    async def add(self, content: MemoryContent, cancellation_token: CancellationToken | None = None) -> None:
+        """Add memory content and persist to database if item is of type MemoryContent"""
+        # Only process items of expected type
+        if isinstance(content, MemoryContent):
+            await super().add(content, cancellation_token)
+            self._save_to_database(content)
+        else:
+            # Optionally log or raise a warning for unexpected types
+            self.logger.warning(f"Unexpected item type added to memory: {type(content)}")
 
     def _save_to_database(self, memory_content: MemoryContent, sender: str = "system"):
         """Save memory content to database"""
@@ -127,7 +133,10 @@ class SharedMemoryManager:
             )
         return self.agent_memories[agent_name]
 
-    async def add_message_to_shared_memory(self, content: str, sender: str, role: str = "assistant", metadata: Dict = None):
+    async def add_message_to_shared_memory(self, content: str, sender: str,
+                                           role: str = "assistant",
+                                           metadata: Dict = None,
+                                           cancellation_token: Optional[CancellationToken] = None):
         """Add a message to shared memory with proper metadata"""
         memory_content = MemoryContent(
             content=content,
@@ -144,7 +153,7 @@ class SharedMemoryManager:
         })
         memory_content.metadata = metadata
 
-        await self.shared_memory.add(memory_content)
+        await self.shared_memory.add(memory_content, cancellation_token)
 
     def get_conversation_history(self) -> List[Dict[str, Any]]:
         """Get conversation history in a format suitable for agents"""

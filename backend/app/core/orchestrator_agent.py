@@ -101,7 +101,8 @@ class Orchestrator:
             Current stage: {self.current_stage.value}
             """,
             tools=[],
-            memory=[self.shared_memory]
+            memory=[self.shared_memory],
+            model_context=UnboundedChatCompletionContext()
         )
 
         # Email Classification Agent with shared + agent-specific memory
@@ -122,7 +123,8 @@ class Orchestrator:
                             Expect JSON-formatted email data.
                             """,
             tools=self._get_classification_tools(),
-            memory=[self.shared_memory,classification_memory]
+            memory=[self.shared_memory,classification_memory],
+            model_context = UnboundedChatCompletionContext()
         )
 
         # Retrieval Agent with shared + agent-specific memory
@@ -141,7 +143,8 @@ class Orchestrator:
                            Use RAG to find contextual information based on the classified email.
                            """,
             tools=self._get_retrieval_tools(),
-            memory=[self.shared_memory, retrieval_memory]
+            memory=[self.shared_memory, retrieval_memory],
+            model_context=UnboundedChatCompletionContext()
         )
 
     def _get_classification_tools(self):
@@ -184,7 +187,7 @@ class Orchestrator:
         async def retrieval_tool(query: str) -> str:
             """Retrieve relevant information from database"""
             try:
-                result = retrieval_tool_fn(query)
+                result = retrieval_tool_fn(user_query=query , db_engine =None, db_session =None )
                 # Log retrieval result to memory
                 if self.memory_manager:
                     await self.memory_manager.add_message_to_shared_memory(
@@ -254,14 +257,24 @@ class Orchestrator:
                 if len(history) > 1:  # More than just the current message
                     conversation_context = f"\nConversation context: {len(history)} previous messages in this conversation."
 
+            history = self.memory_manager.get_conversation_history()
+            history_summary = "\n".join([
+                f"{msg['sender']} ({msg['role']}): {msg['content']}"
+                for msg in history[-10:]  # Limit to last 10 for brevity
+            ])
+
+            initial_prompt = f"""
+                            Here is the message context : {conversation_context}
+                            === Conversation History ===
+                            {history_summary}
+                            Here is the initial user query for conversation {self.conversation_id}:
+                            {message}
+                            Please navigate the user query to orchestration agent to decide which agent to redirect
+                            """
+
             # Create initial message
             initial_message = TextMessage(
-                content=f"""
-                Here is the initial user query for conversation {self.conversation_id}:
-                {message}
-                Please begin with email classification, then proceed with retrieval and analysis based on the input query
-                Remember to use the shared memory to maintain context throughout the workflow.
-                """,source=ORCHESTRATOR_AGENT_NAME
+                content=initial_prompt,source=ORCHESTRATOR_AGENT_NAME
             )
 
             # Run the team chat

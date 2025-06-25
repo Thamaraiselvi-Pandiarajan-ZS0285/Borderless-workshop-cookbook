@@ -33,6 +33,6 @@ class RetrievalToolInput(BaseModel):
     top_k: Annotated[int, Field(10, description="Number of top similar chunks to retrieve")]
 
 
-def retrieval_tool_fn(user_query: str, top_k: int = 10, db_engine=None, db_session=None) -> str:
+def retrieval_tool_fn(user_query: str, top_k: int = 10, db_engine:Engine=None, db_session:sessionmaker=None) -> str:
     tool = RetrievalTool(db_engine, db_session)
     return tool.user_query(user_query, top_k)

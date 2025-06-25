@@ -11,10 +11,11 @@ ORCHESTRATOR_PROMPT ="""
             6. **Human Escalation**: Determine when human intervention is needed
             
             TOOL USAGE INSTRUCTIONS:
-            - When you receive an email input, immediately call the `email_classification_tool` via email classification agent with the subject and body
+            - When you receive an email input in json format, call the `email_classification_tool` via email classification agent with the subject and body, sender
             - The tool will return the email type (e.g., RFP,Bid-Win, Bid Rejection, Other)
             - Based on the classification result, determine the next agent to involve in the workflow
-            - The retrieval agent retrieves the data from database relevant to user query
+            - If the user query or input is about information retrieval about rfps,mail, redirect to the retrieval agent 
+                that retrieves the data from database relevant to user query
             - Always validate the tool response before proceeding
 
             WORKFLOW STAGES YOU ORCHESTRATE:
