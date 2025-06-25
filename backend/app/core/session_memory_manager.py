@@ -9,7 +9,7 @@ from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm.session import sessionmaker
 from autogen_core.memory import ListMemory, MemoryContent, MemoryMimeType
 from autogen_agentchat.messages import TextMessage, HandoffMessage
-from backend.app.core.orchestrator_agent import Orchestrator
+
 from backend.models.all_db_models import ChatMessage, Base
 
 
@@ -26,7 +26,7 @@ class DatabaseMemory(ListMemory):
         # Load existing messages from database
         self._load_from_database()
 
-    def _load_from_database(self):
+    async def _load_from_database(self):
         """Load existing messages from database into memory"""
         try:
             with self.db_session() as session:
@@ -50,16 +50,16 @@ class DatabaseMemory(ListMemory):
                         except json.JSONDecodeError:
                             pass
 
-                    super().add(memory_content)
+                    await super().add(memory_content)
 
                 self.logger.info(f"Loaded {len(rows)} messages from database for conversation {self.conversation_id}")
 
         except Exception as e:
             self.logger.error(f"Error loading messages from database: {str(e)}")
 
-    def add(self, memory_content: MemoryContent) -> None:
+    async def add(self, memory_content: MemoryContent) -> None:
         """Add memory content and persist to database"""
-        super().add(memory_content)
+        await super().add(memory_content)
         self._save_to_database(memory_content)
 
     def _save_to_database(self, memory_content: MemoryContent, sender: str = "system"):
@@ -127,7 +127,7 @@ class SharedMemoryManager:
             )
         return self.agent_memories[agent_name]
 
-    def add_message_to_shared_memory(self, content: str, sender: str, role: str = "assistant", metadata: Dict = None):
+    async def add_message_to_shared_memory(self, content: str, sender: str, role: str = "assistant", metadata: Dict = None):
         """Add a message to shared memory with proper metadata"""
         memory_content = MemoryContent(
             content=content,
@@ -144,7 +144,7 @@ class SharedMemoryManager:
         })
         memory_content.metadata = metadata
 
-        self.shared_memory.add(memory_content)
+        await self.shared_memory.add(memory_content)
 
     def get_conversation_history(self) -> List[Dict[str, Any]]:
         """Get conversation history in a format suitable for agents"""
@@ -215,7 +215,6 @@ class SharedMemoryManager:
                     'conversation_id': self.conversation_id,
                     'total_shared_messages': total_messages,
                     'agent_specific_messages': agent_counts,
-                    'shared_memory_size': len(self.shared_memory.get_all()),
                     'last_updated': datetime.now().isoformat()
                 }
 
@@ -226,8 +225,8 @@ class SharedMemoryManager:
 
 class AutogenSessionManager:
     """Enhanced session manager with integrated memory management"""
-
     def __init__(self, db_engine: Engine, db_session: sessionmaker):
+        from backend.app.core.orchestrator_agent import Orchestrator
         self.db_engine = db_engine
         self.db_session = db_session
         self.active_sessions: Dict[str, 'Orchestrator'] = {}
@@ -238,6 +237,7 @@ class AutogenSessionManager:
         Base.metadata.create_all(bind=self.db_engine)
 
     def create_session(self, conversation_id: str = None) -> str:
+        from backend.app.core.orchestrator_agent import Orchestrator
         """Create new session with memory management"""
         if conversation_id is None:
             conversation_id = str(uuid.uuid4())

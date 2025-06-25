@@ -36,6 +36,9 @@ ORCHESTRATOR_PROMPT ="""
             - Agent outputs pass validation checks
             
             Always provide clear status updates and maintain workflow transparency.
+            
+            Note: If the answer from whatever agent maybe satisfy the user query
+             end that particular answer with TERMINATE word
             """
 
 EMAIL_CLASSIFICATION_PROMPT ="""You are email classification agent, 

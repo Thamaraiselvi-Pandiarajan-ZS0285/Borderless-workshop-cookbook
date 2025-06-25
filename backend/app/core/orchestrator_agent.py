@@ -25,26 +25,34 @@ from backend.app.request_handler.orchestrator_protocol import OrchestrateRequest
 from autogen_core.model_context import UnboundedChatCompletionContext
 from autogen.agentchat import ConversableAgent
 from backend.prompts.retrieval_prompt import RETRIEVAL_PROMPT
+from backend.app.core.session_memory_manager import SharedMemoryManager, DatabaseMemory
 
 
 class WorkflowStage(Enum):
     CLASSIFICATION = "classification"
     RETRIEVAL = "retrieval"
-    ANALYSIS = "analysis"
     COMPLETION = "completion"
 
 class Orchestrator:
-    def __init__(self, conversation_id: str = None, db_engine:Engine = None, db_session:sessionmaker =None):
+    def __init__(self, conversation_id: str = None, db_engine:Engine = None,
+                 db_session:sessionmaker =None, memory_manager:SharedMemoryManager =None):
         self.conversation_id = conversation_id or f"conversation_{hash(str(id(self)))}"
         self.model_name = AZURE_OPENAI_DEPLOYMENT_NAME
         self.max_input_tokens = MAX_INPUT_TOKEN
         self.llm_config = LlmConfig().llm_config
         self.db_engine = db_engine
         self.db_session = db_session
-        self.user_memory = ListMemory()
 
-        # self.workflow_state = WorkflowStage()
-        # self.handoff_manager = HandoffManager()
+        # Initialize memory management
+        if memory_manager:
+            self.memory_manager = memory_manager
+        else:
+            self.memory_manager = SharedMemoryManager(
+                self.conversation_id, db_engine, db_session
+            ) if db_engine and db_session else None
+
+        # Get shared memory for all agents
+        self.shared_memory = self.memory_manager.get_shared_memory() if self.memory_manager else ListMemory()
 
         # Current workflow stage
         self.current_stage = WorkflowStage.CLASSIFICATION
@@ -73,6 +81,7 @@ class Orchestrator:
                 "vision": False,
                 "function_calling": True,
                 "json_output": True,
+                "multiple_system_messages": True
             }
         )
 
@@ -92,7 +101,13 @@ class Orchestrator:
             Current stage: {self.current_stage.value}
             """,
             tools=[],
-            memory=[self.user_memory]
+            memory=[self.shared_memory]
+        )
+
+        # Email Classification Agent with shared + agent-specific memory
+        classification_memory = (
+            self.memory_manager.get_agent_memory(EMAIL_CLASSIFIER_AGENT_NAME)
+            if self.memory_manager else ListMemory()
         )
 
         # Email Classification Agent
@@ -107,7 +122,13 @@ class Orchestrator:
                             Expect JSON-formatted email data.
                             """,
             tools=self._get_classification_tools(),
-            memory=[self.user_memory]
+            memory=[self.shared_memory,classification_memory]
+        )
+
+        # Retrieval Agent with shared + agent-specific memory
+        retrieval_memory = (
+            self.memory_manager.get_agent_memory(RETRIEVAL_AGENT_NAME)
+            if self.memory_manager else ListMemory()
         )
 
         # Retrieval Agent
@@ -120,7 +141,7 @@ class Orchestrator:
                            Use RAG to find contextual information based on the classified email.
                            """,
             tools=self._get_retrieval_tools(),
-            memory=[self.user_memory]
+            memory=[self.shared_memory, retrieval_memory]
         )
 
     def _get_classification_tools(self):
@@ -133,9 +154,27 @@ class Orchestrator:
                 # classification_request = EmailClassifyImageRequest()
                 tool = EmailClassificationTool()
                 result = tool(email_input)
+                if self.memory_manager:
+                    await self.memory_manager.add_message_to_shared_memory(
+                        content=f"Email classification completed: {result}",
+                        sender=EMAIL_CLASSIFIER_AGENT_NAME,
+                        role="assistant",
+                        metadata={"tool_used": "email_classification", "stage": "classification"}
+                    )
                 return f"Email classified successfully: {result}"
             except Exception as e:
-                return f"Classification error: {str(e)}"
+                error_msg = f"Classification error: {str(e)}"
+
+                # Log error to memory
+                if self.memory_manager:
+                    await self.memory_manager.add_message_to_shared_memory(
+                        content=error_msg,
+                        sender=EMAIL_CLASSIFIER_AGENT_NAME,
+                        role="assistant",
+                        metadata={"tool_used": "email_classification", "stage": "classification", "error": True,"content" : e}
+                    )
+
+                return error_msg
 
         return [email_classification_tool]
 
@@ -146,9 +185,28 @@ class Orchestrator:
             """Retrieve relevant information from database"""
             try:
                 result = retrieval_tool_fn(query)
+                # Log retrieval result to memory
+                if self.memory_manager:
+                    await self.memory_manager.add_message_to_shared_memory(
+                        content=f"Information retrieved for query '{query}': {result}",
+                        sender=RETRIEVAL_AGENT_NAME,
+                        role="assistant",
+                        metadata={"tool_used": "retrieval", "stage": "retrieval", "query": query}
+                    )
                 return f"Retrieved information: {result}"
             except Exception as e:
-                return f"Retrieval error: {str(e)}"
+                error_msg = f"Retrieval error: {str(e)}"
+
+                # Log error to memory
+                if self.memory_manager:
+                    await self.memory_manager.add_message_to_shared_memory(
+                        content=error_msg,
+                        sender=RETRIEVAL_AGENT_NAME,
+                        role="assistant",
+                        metadata={"tool_used": "retrieval", "stage": "retrieval", "error": True, "content" : e}
+                    )
+
+                return error_msg
         return [retrieval_tool]
 
 
@@ -169,7 +227,7 @@ class Orchestrator:
         self.team_chat = SelectorGroupChat(
             participants=self.agents,
             termination_condition=self.termination_condition,
-            max_turns=5,
+            max_turns=20,
             model_client=self.model_client
         )
 
@@ -180,12 +238,29 @@ class Orchestrator:
             self.logger.info(f"Starting async orchestration for conversation: {self.conversation_id}")
             self.logger.info(f"Initial message: {message}")
 
+            # Log user message to shared memory
+            if self.memory_manager:
+                await self.memory_manager.add_message_to_shared_memory(
+                    content=message,
+                    sender="user",
+                    role="user",
+                    metadata={"stage": "input", "conversation_start": True}
+                )
+
+            # Create initial message with conversation context
+            conversation_context = ""
+            if self.memory_manager:
+                history = self.memory_manager.get_conversation_history()
+                if len(history) > 1:  # More than just the current message
+                    conversation_context = f"\nConversation context: {len(history)} previous messages in this conversation."
+
             # Create initial message
             initial_message = TextMessage(
                 content=f"""
                 Here is the initial user query for conversation {self.conversation_id}:
                 {message}
                 Please begin with email classification, then proceed with retrieval and analysis based on the input query
+                Remember to use the shared memory to maintain context throughout the workflow.
                 """,source=ORCHESTRATOR_AGENT_NAME
             )
 
@@ -198,18 +273,34 @@ class Orchestrator:
                 last_message = result.messages[-1]
                 if isinstance(last_message, TextMessage):
                     final_response = last_message.content
-
-
+                    # Log final response to shared memory
+                    if self.memory_manager:
+                        await self.memory_manager.add_message_to_shared_memory(
+                            content=final_response,
+                            sender=ORCHESTRATOR_AGENT_NAME,
+                            role="assistant",
+                            metadata={"stage": "completion", "final_response": True}
+                        )
+            return final_response
             # async for message in result_stream:
             #     if hasattr(message, 'content'):
             #         final_response = message.content
                     # self.logger.info(f"Received message: {message.content[:100]}...")
 
-            return final_response
-
         except Exception as e:
+            error_msg = f"Error occurred during orchestration: {str(e)}"
             self.logger.error(f"Error in async orchestration: {str(e)}")
-            return f"Error occurred during orchestration: {str(e)}"
+
+            # Log error to memory
+            if self.memory_manager:
+                await self.memory_manager.add_message_to_shared_memory(
+                    content=error_msg,
+                    sender=ORCHESTRATOR_AGENT_NAME,
+                    role="assistant",
+                    metadata={"stage": "error", "error": True, "content" : e}
+                )
+
+            return error_msg
 
     def orchestrate(self, message: str) -> str:
         """Synchronous wrapper for orchestration"""
@@ -229,19 +320,44 @@ class Orchestrator:
         self.current_stage = new_stage
         self.logger.info(f"Workflow stage updated to: {new_stage.value}")
 
+        # Log stage change to memory
+        if self.memory_manager:
+            self.memory_manager.add_message_to_shared_memory(
+                content=f"Workflow stage changed to: {new_stage.value}",
+                sender=ORCHESTRATOR_AGENT_NAME,
+                role="system",
+                metadata={"stage_change": True, "new_stage": new_stage.value}
+            )
+
     def get_conversation_history(self) -> List[Dict]:
         """Get the conversation history from team chat"""
         try:
-            # This would depend on the specific implementation of team chat history
-            return []  # Placeholder - implement based on autogen_agentchat history access
+            if self.memory_manager:
+                return self.memory_manager.get_conversation_history()
+            return []
         except Exception as e:
             self.logger.error(f"Error getting conversation history: {str(e)}")
             return []
 
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory statistics for this conversation"""
+        try:
+            if self.memory_manager:
+                return self.memory_manager.get_memory_stats()
+            return {}
+        except Exception as e:
+            self.logger.error(f"Error getting memory stats: {str(e)}")
+            return {}
+
     def reset_conversation(self):
-        """Reset the conversation state"""
+        """Reset the conversation state and clear memory"""
         self.current_stage = WorkflowStage.CLASSIFICATION
-        # Reset team chat if needed
+
+        # Clear memory if manager exists
+        if self.memory_manager:
+            self.memory_manager.clear_conversation()
+
+        # Reset team chat
         self._setup_team_chat()
         self.logger.info(f"Conversation {self.conversation_id} reset")
 

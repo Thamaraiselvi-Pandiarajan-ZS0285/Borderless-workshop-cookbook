@@ -22,6 +22,7 @@ from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.orchestrator_agent import Orchestrator
 from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.core.session_memory_manager import AutogenSessionManager
 from backend.app.core.user_query_handler import UserQueryAgent
 from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
@@ -560,20 +561,44 @@ async def run_orchestrator(request: OrchestrateRequest):
     }
     """
     try:
-        # Instantiate Orchestrator
-        orchestrator = Orchestrator(conversation_id=request.conversation_id)
+        logger.info(f"Received orchestration request: {request.message[:100]}...")
+        session_manager = AutogenSessionManager(db_engine=app.state.db_engine, db_session=app.state.db_session)
 
-        # Run synchronous wrapper in thread pool
-        # loop = asyncio.get_event_loop()
-        # response = await loop.run_in_executor(None, orchestrator.orchestrate, request.message)
+        if request.conversation_id:
+            orchestrator =session_manager.get_session(request.conversation_id)
+            if not orchestrator:
+                orchestrator = session_manager.load_session(request.conversation_id)
+                if not orchestrator:
+                    conversation_id =session_manager.create_session(request.conversation_id)
+                    orchestrator = session_manager.get_session(conversation_id)
+        else:
+            # Create completely new session
+            conversation_id = session_manager.create_session()
+            orchestrator = session_manager.get_session(conversation_id)
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Failed to create or load orchestrator")
 
-        # Call the async method directly
+        # Execute orchestration
+        logger.info(f"Starting orchestration for conversation: {orchestrator.conversation_id}")
         response = await orchestrator.orchestrate_async(request.message)
 
+        # Save session state
+        session_manager.save_session(orchestrator.conversation_id)
+
+        # Get memory statistics
+        memory_stats = orchestrator.get_memory_stats()
+
+        logger.info(f"Orchestration completed for conversation: {orchestrator.conversation_id}")
 
         return {
             "response": response,
-            "conversation_id": orchestrator.conversation_id
+            "conversation_id": orchestrator.conversation_id,
+            "memory_stats": memory_stats,
+            "status": "success"
         }
+
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error in orchestration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Orchestration failed: {str(e)}")
+
+
