@@ -1,11 +1,9 @@
 import json
-import os
 from typing import Optional
 
 import tiktoken
 from openai import AzureOpenAI
 from autogen import AssistantAgent
-from dotenv import load_dotenv
 from backend.config.dev_config import *
 from backend.prompts.confidence_prompt import CONFIDENCE_PROMPT
 from backend.prompts.validator_prompt import VALIDATION_PROMPT
@@ -19,16 +17,16 @@ class EmailClassifierProcessor:
     def __init__(self):
         load_dotenv()
 
-        self.model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+        self.model_name = AZURE_OPENAI_DEPLOYMENT_NAME
         self.max_input_tokens = MAX_INPUT_TOKEN
 
         self.llm_config = {
             "config_list": [{
                 "model": self.model_name,
                 "api_type": AZURE_API_TYPE,
-                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                "base_url": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                "api_version": os.getenv("AZURE_OPENAI_API_VERSION")
+                "api_key": AZURE_OPENAI_API_KEY,
+                "base_url": AZURE_OPENAI_ENDPOINT,
+                "api_version": AZURE_OPENAI_API_VERSION
             }],
             "temperature": TEMPERATURE,
         }

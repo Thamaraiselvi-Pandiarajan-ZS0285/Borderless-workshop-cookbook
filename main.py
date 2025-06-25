@@ -5,17 +5,19 @@ import uuid
 import mimetypes
 import json
 import re
+
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
+from fastapi.encoders import jsonable_encoder
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
+from backend.app.core.email_processing_pipeline import EmailProcessingPipeline
 from backend.app.core.embedder import Embedder
-# from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
@@ -25,12 +27,10 @@ from backend.app.core.user_query_handler import UserQueryAgent
 
 from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
-    email_classify_response_via_vlm
+from backend.app.response_handler.email_classifier_response import build_email_classifier_response, email_classify_response_via_vlm
 from backend.app.response_handler.file_operations_reponse import build_encode_file_response
 from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.db_config import *
-from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.db.db_helper.db_utils import Dbutils
 from backend.models.all_db_models import Base
@@ -40,9 +40,6 @@ from backend.app.core.summarization_agent import SummarizationAgent
 from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
-
-from sqlalchemy.engine.base import Engine
-from sqlalchemy.orm import sessionmaker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -451,65 +448,20 @@ def ingest_embedding(email_content:str, response_json:Dict[str,list]):
     embedder.ingest_email_for_content("sender@yahoo.com",email_content, content_embedding)
 
 
+
 @app.post("/api/all-in-one")
 async def test(email_file: EmailClassificationRequest):
     try:
-
-        email_data = email_file.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
+        email_data = jsonable_encoder(email_file)
 
         if not isinstance(email_data, dict):
             raise ValueError("The uploaded JSON must be an object.")
 
-        file_utils = FilePathUtils(file=None, temp_dir=None)
-        output_dir = file_utils.file_dir()
-        os.makedirs(output_dir, exist_ok=True)
-        file_name = str(uuid.uuid4())
-        pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
-        #email to pdf
-        pdf_converter = HTMLEmailToPDFConverter()
-        pdf_converter.convert_to_pdf(email_data, pdf_path)
-        #encode
-        base64_encoder = FileToBase64(pdf_path)
-        encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-        #paper-itemizer
-        paper_itemizer_object = PaperItemizer(
-            input=encoded_data,
-            file_name=file_name,
-            extension=DEFAULT_IMAGE_FORMAT
-        )
+        # Trigger orchestration via support agent
+        pipeline = EmailProcessingPipeline()
+        response = await pipeline.run_pipeline(json.dumps(email_data))
 
-        results = paper_itemizer_object.do_paper_itemizer()
-        #classification
-        # classification_result = do_classify(email_file)
-
-        email_image_request= []
-        summaries = []
-        classify_image_request_data = {"imagedata": [], "json_data": email_file}
-        for result in results:
-            input_data = result["filePath"]
-            file_extension = result["fileExtension"]
-            file_name = result["fileName"]
-            classify_image_request_data["imagedata"].append({"input_path":input_data, "file_name":file_name, "file_extension":file_extension})
-            classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
-            classify_via_llm = do_classify_via_vlm(classify_image_request)
-            category = classify_via_llm.classification
-            summary = classify_via_llm.summary
-            summaries.append(summary)
-             # category = classification_result.classificatin
-            email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
-
-        email_request = EmailImageRequest(data=email_image_request)
-
-        response = upload_email_images(email_request)
-        # response["summary"] = classify_via_llm.summary
-
-        for result in response["results"]:
-            subject = result["extracted_metadata"]["subject"]
-            full_email_text = result["extracted_metadata"]["full_email_text"]
-            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
-            ingest_embedding(combined_text,response)
-
-        return response
+        return JSONResponse(content=response)
 
     except ValueError as ve:
         raise HTTPException(status_code=400, detail={"error": str(ve)})
