@@ -1,16 +1,13 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
 
 from backend.config.db_config import *
 from backend.db.db_helper.db_Initializer import DbInitializer
-
-
-class Base(DeclarativeBase):
-    pass
+from backend.models.db_base_class import Base
 
 db_init = DbInitializer(
             POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,

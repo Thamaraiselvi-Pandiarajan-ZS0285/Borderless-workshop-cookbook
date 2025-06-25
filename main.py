@@ -41,6 +41,16 @@ from backend.utils.extract_data_from_file import AttachmentExtractor, split_into
 from backend.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 
+
+import logging
+
+from autogen_core import EVENT_LOGGER_NAME
+
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(EVENT_LOGGER_NAME)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.INFO)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -448,28 +458,26 @@ def ingest_embedding(email_content:str, response_json:Dict[str,list]):
     embedder.ingest_email_for_content("sender@yahoo.com",email_content, content_embedding)
 
 
-
 @app.post("/api/all-in-one")
 async def test(email_file: EmailClassificationRequest):
     try:
-        email_data = jsonable_encoder(email_file)
+        email_data = email_file.model_dump()
 
         if not isinstance(email_data, dict):
-            raise ValueError("The uploaded JSON must be an object.")
+            raise HTTPException(status_code=400, detail="Invalid input format. Expecting JSON object.")
 
-        # Trigger orchestration via support agent
         pipeline = EmailProcessingPipeline()
-        response = await pipeline.run_pipeline(json.dumps(email_data))
-
+        response = await pipeline.run_pipeline(email_file.model_dump())
         return JSONResponse(content=response)
 
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
+        raise HTTPException(status_code=400, detail=str(ve))
 
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+        raise HTTPException(status_code=500, detail="Invalid JSON response from LLM.")
 
     except Exception as e:
+        logging.exception("Unhandled error occurred.")
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
 @app.post("/api/query-input")

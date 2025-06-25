@@ -1,9 +1,11 @@
 import json
 import logging
+import pathlib
 import uuid
 import re
 from http.client import HTTPException
 from typing import Dict, Any, Tuple
+from autogen_agentchat.messages import TextMessage
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.tools import FunctionTool
@@ -30,7 +32,16 @@ from backend.utils.file_utils import FilePathUtils
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
-logger = logging.getLogger(__name__)
+
+import logging
+
+from autogen_core import EVENT_LOGGER_NAME
+
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(EVENT_LOGGER_NAME)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.INFO)
+
 class EmailProcessingPipeline:
     def __init__(self):
         self.model_client = AzureOpenAIChatCompletionClient(
@@ -40,12 +51,11 @@ class EmailProcessingPipeline:
             azure_ad_token=AZURE_OPENAI_API_KEY,
             azure_deployment=AZURE_OPENAI_DEPLOYMENT_NAME
         )
-
         # Tool registration
         self.tools = [
             FunctionTool(
                 func=self.convert_email_data_to_pdf,
-                name="convert_email_data_to_pdf",
+                name="convert_email_data_to_pdf(email_data)",
                 description="Convert HTML email data to a PDF path"
             ),
             FunctionTool(
@@ -85,23 +95,45 @@ class EmailProcessingPipeline:
             model_client=self.model_client,
             tools=self.tools,
             system_message="""
-            You are a backend orchestration agent that receives structured email data.
-            Your task is to process this email through multiple backend services by calling the following tools **in sequence**:
-            1. convert_email_data_to_pdf(email_data)
-            2. do_encode_via_path(pdf_path, file_name)
-            3. do_paper_itemizer(PaperItemizerRequest)
-            4. do_classify_via_vlm(List of itemized image file)
-            5. build_email_image_request(results, classification_result)
-            6. upload_email_images(email_request)
-            7. ingest_all_embeddings(response, summary)
-            Return upload_email_images response to the user.
-            Do not skip steps. Use TERMINATE after final output.
-            """
+        You are a backend orchestration agent that receives structured email data.
+
+        Process it in this order:
+
+        1. Call convert_email_data_to_pdf(email_data). It returns (pdf_path, file_name).
+
+        2. Call do_encode_via_path(path=pdf_path, file_name=file_name). This returns PaperItemizerRequest.
+
+        3. Call do_paper_itemizer(PaperItemizerRequest). It returns results (list of image data).
+
+        4. Call do_classify_via_vlm(results) to classify the email. It returns classification_result.
+
+        5. Call build_email_image_request(results, classification_result). It returns email_image_request.
+
+        6. Call upload_email_images(email_request=email_image_request). It returns metadata_response.
+
+        7. Call ingest_all_embeddings(response=metadata_response, summary=classification_result['summary']).
+
+        → Return metadata_response to the user.
+
+        ⚠️ Follow this exact order. Do not skip steps. Use TERMINATE after step 7.
+        """
         )
 
     async def run_pipeline(self, email_data: dict) -> dict:
-        response = await self.agent.run(task=json.dumps(email_data))
-        return json.loads(response.chat_messages[self.agent][-1]["content"])
+        if not isinstance(email_data, dict):
+            raise ValueError(f"Input should be dict, got {type(email_data)}")
+
+        try:
+            text_message = TextMessage(
+                content=json.dumps({"email_data": email_data}),
+                source="User"
+            )
+            response = await self.agent.run(task=text_message)
+            content = response.chat_messages[self.agent][-1]["content"]
+            return json.loads(content)
+        except Exception as e:
+            logging.exception("Pipeline execution failed.")
+            raise e
 
     def do_paper_itemizer(self,request: PaperItemizerRequest):
         logger.info("Received paper itemizer request for file: %s", request.file_name)
@@ -275,7 +307,7 @@ class EmailProcessingPipeline:
             self.ingest_embedding(combined_text, response)
         return {"status": "success"}
 
-    def convert_email_data_to_pdf(self, email_data: dict) -> Tuple[str, str]:
+    def convert_email_data_to_pdf(self, email_data: dict) -> dict:
         if not isinstance(email_data, dict):
             raise ValueError("The input must be a dictionary.")
 
@@ -289,9 +321,12 @@ class EmailProcessingPipeline:
         pdf_converter.convert_to_pdf(email_data, pdf_path)
 
         logger.info(f"✅ PDF generated at: {pdf_path}")
-        return pdf_path, file_name
+        return {
+            "path": pdf_path,
+            "file_name": file_name
+        }
 
-    async def do_encode_via_path(self, path, file_name) -> PaperItemizerRequest:
+    def do_encode_via_path(self, path:pathlib.Path|str, file_name:str) -> PaperItemizerRequest:
 
         # Double-check path exists
         if not os.path.isfile(path):
