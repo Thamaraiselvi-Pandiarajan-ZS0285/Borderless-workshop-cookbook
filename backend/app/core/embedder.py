@@ -6,7 +6,7 @@ from openai import AzureOpenAI
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.config.dev_config import AZURE_OPENAI_DEPLOYMENT_NAME
+from backend.config.dev_config import *
 from backend.models.all_db_models import  EmailContentEmbedding, MetadataExtractionJsonEmbedding
 from dotenv import load_dotenv
 from sentence_transformers import CrossEncoder
@@ -19,9 +19,9 @@ load_dotenv()
 class Embedder:
     def __init__(self, db_engine:Engine,db_session:sessionmaker):
         self.client = AzureOpenAI(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_key=AZURE_OPENAI_API_KEY,
+            api_version=AZURE_OPENAI_API_VERSION,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
         )
         self.db_engine = db_engine
         self.db_session = db_session
