@@ -49,13 +49,13 @@ class EmailProcessingPipeline:
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             api_version=AZURE_OPENAI_API_VERSION,
             azure_ad_token=AZURE_OPENAI_API_KEY,
-            azure_deployment=AZURE_OPENAI_DEPLOYMENT_NAME
+            azure_deployment=AZURE_OPENAI_DEPLOYMENT_NAME,
         )
         # Tool registration
         self.tools = [
             FunctionTool(
                 func=self.convert_email_data_to_pdf,
-                name="convert_email_data_to_pdf(email_data)",
+                name="convert_email_data_to_pdf",
                 description="Convert HTML email data to a PDF path"
             ),
             FunctionTool(
@@ -94,6 +94,7 @@ class EmailProcessingPipeline:
             name="support_agent",
             model_client=self.model_client,
             tools=self.tools,
+            reflect_on_tool_use=True,
             system_message="""
         You are a backend orchestration agent that receives structured email data.
 
@@ -101,7 +102,7 @@ class EmailProcessingPipeline:
 
         1. Call convert_email_data_to_pdf(email_data). It returns (pdf_path, file_name).
 
-        2. Call do_encode_via_path(path=pdf_path, file_name=file_name). This returns PaperItemizerRequest.
+        2. Call do_encode_via_path(pdf_path=pdf_path, file_name=file_name). This returns PaperItemizerRequest.
 
         3. Call do_paper_itemizer(PaperItemizerRequest). It returns results (list of image data).
 
@@ -128,9 +129,19 @@ class EmailProcessingPipeline:
                 content=json.dumps({"email_data": email_data}),
                 source="User"
             )
-            response = await self.agent.run(task=text_message)
-            content = response.chat_messages[self.agent][-1]["content"]
-            return json.loads(content)
+            final_content = None
+            async for event in self.agent.run_stream(task=text_message):
+                if isinstance(event, TextMessage):
+                    try:
+                        # Attempt to parse the content as JSON
+                        parsed_content = json.loads(event.content)
+                        # If parsing is successful, process the content
+                        final_content = parsed_content
+                    except json.JSONDecodeError:
+                        # If parsing fails, log the event and continue
+                        logger.warning(f"Received non-JSON content: {event.content}")
+                        continue
+            return final_content
         except Exception as e:
             logging.exception("Pipeline execution failed.")
             raise e
@@ -322,7 +333,7 @@ class EmailProcessingPipeline:
 
         logger.info(f"✅ PDF generated at: {pdf_path}")
         return {
-            "path": pdf_path,
+            "pdf_path": pdf_path,
             "file_name": file_name
         }
 

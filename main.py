@@ -461,13 +461,13 @@ def ingest_embedding(email_content:str, response_json:Dict[str,list]):
 @app.post("/api/all-in-one")
 async def test(email_file: EmailClassificationRequest):
     try:
-        email_data = email_file.model_dump()
+        email_data = jsonable_encoder(email_file)
 
         if not isinstance(email_data, dict):
             raise HTTPException(status_code=400, detail="Invalid input format. Expecting JSON object.")
 
         pipeline = EmailProcessingPipeline()
-        response = await pipeline.run_pipeline(email_file.model_dump())
+        response = await pipeline.run_pipeline(email_data)
         return JSONResponse(content=response)
 
     except ValueError as ve:
