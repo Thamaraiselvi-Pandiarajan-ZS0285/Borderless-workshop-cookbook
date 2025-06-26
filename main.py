@@ -17,6 +17,7 @@ from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.embedder import Embedder
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.metadata_consolidator import MetadataConsolidatorAgent
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
@@ -384,6 +385,19 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     results = []
     ocr_agent = EmailOCRAgent()
     validator_agent = MetadataValidatorAgent()
+    consolidator_agent = MetadataConsolidatorAgent()
+
+    extracted_jsons = []
+    errors = []
+    if request.data[0].category.lower() in "rfp":
+        email_category="rfp"
+    elif request.data[0].category.lower() in "bid-win":
+        email_category="bid-win"
+    elif request.data[0].category.lower() in "rejection":
+        email_category="rejection"
+    else:
+        return {"error": "Human in the loop needed"}
+
 
     for item in request.data:
         try:
@@ -395,30 +409,36 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
                 if not item.input.startswith("data:image") and len(item.input) < 100:
                     raise ValueError("Invalid base64 input or unreadable image path.")
                 base64_image = item.input
-            extracted_text = ocr_agent.extract_text_from_base64(base64_image, item.category)
-            cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
-            validation_result = validator_agent.validate_metadata(cleaned_json_string, item.category)
-            try:
-                parsed_metadata = json.loads(cleaned_json_string)
-                results.append({
-                    "file_name": item.file_name,
-                    "file_extension": item.file_extension,
-                    "extracted_metadata": parsed_metadata,
-                    "validation_result": validation_result
-                })
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Failed to parse JSON from extracted text: {e}")
 
+            # OCR extraction
+            extracted_text = ocr_agent.extract_text_from_base64(base64_image, email_category)
+            cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
+
+            # Validate each extracted metadata
+            validation_result = validator_agent.validate_metadata(cleaned_json_string, email_category)
+            extracted_jsons.append(cleaned_json_string)
 
         except Exception as e:
             logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
-            results.append({
+            errors.append({
                 "file_name": item.file_name,
                 "file_extension": item.file_extension,
                 "error": str(e)
             })
 
-    return {"results": results}
+    if errors:
+        return {"errors": errors}
+
+    # Consolidate all validated JSON strings into one final metadata
+    try:
+        consolidated_metadata = consolidator_agent.consolidate(extracted_jsons, category=email_category)
+        return {
+            "consolidated_metadata": consolidated_metadata
+        }
+    except Exception as e:
+        logger.error(f"Metadata consolidation failed: {e}", exc_info=True)
+        return {"error": f"Consolidation failed: {str(e)}"}
+
 
 #
 # @app.post("/query")
@@ -455,7 +475,7 @@ def ingest_embedding(email_content:str, response_json:Dict[str,list]):
 async def test(email_file: EmailClassificationRequest):
     try:
 
-        email_data = email_file.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
+        email_data = email_file.model_dump()  # to do: if body is html, convert to pdf using pdf plumber
 
         if not isinstance(email_data, dict):
             raise ValueError("The uploaded JSON must be an object.")
@@ -465,13 +485,13 @@ async def test(email_file: EmailClassificationRequest):
         os.makedirs(output_dir, exist_ok=True)
         file_name = str(uuid.uuid4())
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
-        #email to pdf
+        # email to pdf
         pdf_converter = HTMLEmailToPDFConverter()
         pdf_converter.convert_to_pdf(email_data, pdf_path)
-        #encode
+        # encode
         base64_encoder = FileToBase64(pdf_path)
         encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-        #paper-itemizer
+        # paper-itemizer
         paper_itemizer_object = PaperItemizer(
             input=encoded_data,
             file_name=file_name,
@@ -479,35 +499,34 @@ async def test(email_file: EmailClassificationRequest):
         )
 
         results = paper_itemizer_object.do_paper_itemizer()
-        #classification
+        # classification
         # classification_result = do_classify(email_file)
 
-        email_image_request= []
+        email_image_request = []
         summaries = []
         classify_image_request_data = {"imagedata": [], "json_data": email_file}
         for result in results:
             input_data = result["filePath"]
             file_extension = result["fileExtension"]
             file_name = result["fileName"]
-            classify_image_request_data["imagedata"].append({"input_path":input_data, "file_name":file_name, "file_extension":file_extension})
+            classify_image_request_data["imagedata"].append(
+                {"input_path": input_data, "file_name": file_name, "file_extension": file_extension})
             classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
             classify_via_llm = do_classify_via_vlm(classify_image_request)
-            category = classify_via_llm.classification
+            category = classify_via_llm.classification[0]
             summary = classify_via_llm.summary
             summaries.append(summary)
-             # category = classification_result.classificatin
-            email_image_request.append({"input":input_data, "file_name":file_name, "file_extension":file_extension, "category": category})
+            email_image_request.append(
+                {"input": input_data, "file_name": file_name, "file_extension": file_extension, "category": category})
 
         email_request = EmailImageRequest(data=email_image_request)
 
         response = upload_email_images(email_request)
-        # response["summary"] = classify_via_llm.summary
-
-        for result in response["results"]:
-            subject = result["extracted_metadata"]["subject"]
-            full_email_text = result["extracted_metadata"]["full_email_text"]
-            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
-            ingest_embedding(combined_text,response)
+        result=response["consolidated_metadata"]
+        subject = result["subject"]
+        full_email_text = result["full_email_text"]
+        combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
+        ingest_embedding(combined_text,response)
 
         return response
 
@@ -519,6 +538,7 @@ async def test(email_file: EmailClassificationRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+
 
 @app.post("/api/query-input")
 async def user_query(user_query: str, top_k: int=10):

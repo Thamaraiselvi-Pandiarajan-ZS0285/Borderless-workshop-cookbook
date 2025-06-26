@@ -102,3 +102,9 @@ Rejection: client_name, project_name, rejection_reason
 Return only the JSON object.
 """
 
+CONSOLIDATION_PROMPT = """You are a metadata consolidation agent.
+You will receive multiple JSON metadata strings extracted from parts of the same email (e.g. multi-page email images).
+Your task is to merge them into a single consolidated JSON according to email category: {category}.
+
+Ensure fields like subject, sender, recipient, and dates are unified. Avoid duplication.
+Return a single clean JSON only."""
