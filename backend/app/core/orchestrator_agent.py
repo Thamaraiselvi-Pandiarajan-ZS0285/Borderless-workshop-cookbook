@@ -142,7 +142,7 @@ class Orchestrator:
                            You are responsible for retrieving relevant information in conversation: {self.conversation_id}
                            Use RAG to find contextual information based on the classified email.
                            """,
-            tools=self._get_retrieval_tools(),
+            tools=self._get_retrieval_tools(self.db_engine,self.db_session),
             memory=[self.shared_memory, retrieval_memory],
             model_context=UnboundedChatCompletionContext()
         )
@@ -156,7 +156,7 @@ class Orchestrator:
                 # Convert string input to proper request format if needed
                 # classification_request = EmailClassifyImageRequest()
                 tool = EmailClassificationTool()
-                result = tool(email_input)
+                result = tool.test(email_input)
                 if self.memory_manager:
                     await self.memory_manager.add_message_to_shared_memory(
                         content=f"Email classification completed: {result}",
@@ -181,13 +181,15 @@ class Orchestrator:
 
         return [email_classification_tool]
 
-    def _get_retrieval_tools(self):
+    def _get_retrieval_tools(self, db_engine:Engine, db_session : sessionmaker):
         """Get tools for retrieval agent"""
+        self.db_engine = db_engine
+        self.db_session = db_session
 
         async def retrieval_tool(query: str) -> str:
             """Retrieve relevant information from database"""
             try:
-                result = retrieval_tool_fn(user_query=query , db_engine =None, db_session =None )
+                result = retrieval_tool_fn(user_query=query , db_engine =self.db_engine, db_session =self.db_session )
                 # Log retrieval result to memory
                 if self.memory_manager:
                     await self.memory_manager.add_message_to_shared_memory(

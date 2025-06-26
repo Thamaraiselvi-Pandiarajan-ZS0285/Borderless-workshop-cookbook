@@ -6,7 +6,7 @@ from openai import AzureOpenAI
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.config.dev_config import AZURE_OPENAI_DEPLOYMENT_NAME
+from backend.config.dev_config import AZURE_OPENAI_DEPLOYMENT
 from backend.models.all_db_models import  EmailContentEmbedding, MetadataExtractionJsonEmbedding
 from dotenv import load_dotenv
 from sentence_transformers import CrossEncoder
@@ -18,11 +18,17 @@ load_dotenv()
 
 class Embedder:
     def __init__(self, db_engine:Engine,db_session:sessionmaker):
-        self.client = AzureOpenAI(
+        self.embedding_client = AzureOpenAI(
             api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
             azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+        )
+        self.client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
         )
         self.db_engine = db_engine
         self.db_session = db_session
@@ -34,7 +40,7 @@ class Embedder:
         if not text.strip():
             raise ValueError("Cannot embed empty text.")
 
-        response = self.client.embeddings.create(
+        response = self.embedding_client.embeddings.create(
             model="text-embedding-3-small",
             input=text
         )
@@ -102,7 +108,7 @@ class Embedder:
         f"Top Matching Content:\n{formatted_reranked_results}"
     )
         response = self.client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT_NAME,
+            model=AZURE_OPENAI_DEPLOYMENT,
             messages=[
                 {"role": "system", "content":  USER_QUERY_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}

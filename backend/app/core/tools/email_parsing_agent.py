@@ -157,7 +157,7 @@ class  EmailClassificationTool:
     def test(self, email_input: EmailClassifyImageRequest):
         try:
 
-            email_data = self.email_input.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
+            email_data = email_input.model_dump()  #to do: if body is html, convert to pdf using pdf plumber
 
             if not isinstance(email_data, dict):
                 raise ValueError("The uploaded JSON must be an object.")
@@ -185,7 +185,7 @@ class  EmailClassificationTool:
             # classification_result = self.do_classify()
             email_image_request = []
             summaries = []
-            classify_image_request_data = {"imagedata": [], "json_data": email_file}
+            classify_image_request_data = {"imagedata": [], "json_data": email_input}
 
             for result in results:
                 input_data = result["encode"]
@@ -208,7 +208,7 @@ class  EmailClassificationTool:
             for result in response["results"]:
                 subject = result["extracted_metadata"]["subject"]
                 full_email_text = result["extracted_metadata"]["full_email_text"]
-                combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{classification_result.summary}"
+                combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
                 self.ingest_embedding(combined_text,response)
 
             return response
