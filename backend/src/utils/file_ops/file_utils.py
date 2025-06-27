@@ -3,7 +3,6 @@ import logging
 import pathlib
 from typing import Union, Optional
 
-from backend.src.config.dev_config import BASE_PATH
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
