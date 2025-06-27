@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 
 from backend.src.core.base_agents.base_agent import BaseAgent
+from backend.src.core.base_client.base_client import OpenAiClient
 from backend.src.prompts.meta_data_extraction import RFP_EXTRACTION_PROMPT, BID_WIN_EXTRACTION_PROMPT, \
     BID_REJECTION_EXTRACTION_PROMPT
 
@@ -27,7 +28,8 @@ class EmailOCRAgent:
     """
 
     def __init__(self) -> None:
-            self.base_agent=BaseAgent()
+            self.client = OpenAiClient().open_ai_chat_completion_client
+            self.base_agent=BaseAgent(self.client)
 
 
     async def extract_text_from_base64(self, base64_str: str, category: str) -> str:
@@ -42,6 +44,8 @@ class EmailOCRAgent:
 
         Raises:
             RuntimeError: If the API call fails or returns no content.
+            :param base64_str:
+            :param category:
         """
         if not base64_str or not isinstance(base64_str, str):
             raise ValueError("Input base64 string is invalid or empty.")
