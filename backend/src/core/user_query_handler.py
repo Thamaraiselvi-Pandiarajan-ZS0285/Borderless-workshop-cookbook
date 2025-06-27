@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class UserQueryAgent:
     def __init__(self) -> None:
        self.base_agent=BaseAgent()
-       self.query_decomposition_agent = self.base_agent.create_agent("QUERY_DECOMPOSITION_AGENT",SEMANTIC_DECOMPOSITION_PROMPT)
+       self.query_decomposition_agent = self.base_agent.create_assistant_agent("QUERY_DECOMPOSITION_AGENT", SEMANTIC_DECOMPOSITION_PROMPT)
 
     async def query_decomposition(self, user_query: str) -> str:
         try:

@@ -27,23 +27,23 @@ class EmailClassifierProcessor:
         self._initialize_agents()
 
     def _initialize_agents(self):
-        self.email_classifier_agent = self.base_agent.create_agent(
+        self.email_classifier_agent = self.base_agent.create_assistant_agent(
             name=EMAIL_CLASSIFIER_AGENT_NAME,
             prompt=CLASSIFICATION_PROMPT
         )
-        self.validator_agent = self.base_agent.create_agent(
+        self.validator_agent = self.base_agent.create_assistant_agent(
             name=VALIDATOR_AGENT_NAME,
             prompt=VALIDATION_PROMPT
         )
-        self.confidence_agent = self.base_agent.create_agent(
+        self.confidence_agent = self.base_agent.create_assistant_agent(
             name=CONFIDENCE_AGENT_NAME,
             prompt=CONFIDENCE_PROMPT
         )
-        self.trigger_reason_agent = self.base_agent.create_agent(
+        self.trigger_reason_agent = self.base_agent.create_assistant_agent(
             name=TIGGER_REASON_AGENT_NAME,
             prompt=TRIGGER_REASON_PROMPT
         )
-        self.classification_with_llm = self.base_agent.create_agent(
+        self.classification_with_llm = self.base_agent.create_assistant_agent(
             name=VLM_CLASSIFICATION_AGENT_NAME,
             prompt=CLASSIFICATION_PROMPT_VLM
         )

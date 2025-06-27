@@ -2,8 +2,6 @@ import os
 import logging
 from typing import Dict, Any
 from abc import ABC, abstractmethod
-
-from debian.debtags import output
 from jinja2 import Environment, PackageLoader, Template
 import pdfkit
 

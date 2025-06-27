@@ -9,7 +9,7 @@ class SummarizationAgent:
     async def summarize_text(self, text: str, task_prompt: str = "") -> str:
         prompt = SUMMARIZATION_PROMPT + "\n\n" + task_prompt if task_prompt else SUMMARIZATION_PROMPT
 
-        summarization_agent = self.base_agent.create_agent(name=SUMMARIZATION_AGENT_NAME,prompt=prompt)
+        summarization_agent = self.base_agent.create_assistant_agent(name=SUMMARIZATION_AGENT_NAME, prompt=prompt)
         response =  await summarization_agent.run(task=text)
         return response.get("content", "") if isinstance(response, dict) else str(response).strip()
 

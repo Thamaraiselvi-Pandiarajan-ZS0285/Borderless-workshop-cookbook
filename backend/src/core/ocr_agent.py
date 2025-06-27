@@ -47,7 +47,7 @@ class EmailOCRAgent:
             raise ValueError("Input base64 string is invalid or empty.")
 
         prompt = get_prompt_by_category(category)
-        ocr_agent = self.base_agent.create_agent("OCR_AGENT", prompt)
+        ocr_agent = self.base_agent.create_assistant_agent("OCR_AGENT", prompt)
 
         content = (
             f"Image URL:\n"

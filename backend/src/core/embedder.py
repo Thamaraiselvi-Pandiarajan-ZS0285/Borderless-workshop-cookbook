@@ -1,30 +1,25 @@
 import json
 import numpy as np
-from openai import AzureOpenAI
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.src.config.dev_config import USER_QUERY_AGENT_NAME
 from backend.src.core.base_agents.base_agent import BaseAgent
-from backend.src.db.models.metadata_extraction_json_embedding import  EmailContentEmbedding, MetadataExtractionJsonEmbedding
+from backend.src.core.base_client.base_client import OpenAiClient
+from backend.src.db.models.email_content_embedding import EmailContentEmbedding
+from backend.src.db.models.metadata_extraction_json_embedding import  MetadataExtractionJsonEmbedding
 from sentence_transformers import CrossEncoder
 
-from backend.src.prompts import USER_QUERY_SYSTEM_PROMPT
-
+from backend.src.prompts.user_query_prompt import USER_QUERY_SYSTEM_PROMPT
 
 
 class Embedder:
-    def __init__(self, db_engine:Engine,db_session:sessionmaker):
-       self.base_agent=BaseAgent()
-       self.db_engine = db_engine
-       self.db_session = db_session
-
-       self.client = AzureOpenAI(
-           api_key=AZURE_OPENAI_API_KEY,
-           api_version=AZURE_OPENAI_API_VERSION,
-           azure_endpoint=AZURE_OPENAI_ENDPOINT,
-       )
-
-       self.user_query_agent = self.base_agent.create_agent(name=USER_QUERY_AGENT_NAME,prompt= USER_QUERY_SYSTEM_PROMPT)
+    def __init__(self, db_engine:Engine, db_session:sessionmaker):
+        self.client =OpenAiClient().open_ai_chat_completion_client
+        self.base_agent=BaseAgent(self.client)
+        self.db_engine = db_engine
+        self.db_session = db_session
+        self.user_query_agent = self.base_agent.create_assistant_agent(name=USER_QUERY_AGENT_NAME, prompt= USER_QUERY_SYSTEM_PROMPT)
 
 
     def embed_text(self, text):

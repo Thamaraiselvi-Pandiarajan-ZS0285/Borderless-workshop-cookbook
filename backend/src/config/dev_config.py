@@ -23,13 +23,6 @@ MODEL_INFO={
                 "json_output": False
             }
 
-
-# AZURE_OPENAI_API_KEY="u6E6J0Tako0ANrOabdwG8UMhO8RgVXGGmqKiXJtDkoCby2chFGLQJQQJ99BAACHYHv6XJ3w3AAABACOGQqRb"
-# AZURE_OPENAI_ENDPOINT='https://dataIQ-openai.openai.azure.com/'
-# AZURE_OPENAI_DEPLOYMENT_NAME='gpt-4o-mini'
-# AZURE_OPENAI_API_VERSION='2025-01-01-preview'
-# AZURE_OPENAI_DEPLOYMENT='gpt-4o-mini'
-
 AZURE_OPENAI_API_KEY="2K3oZXs28WZE2y1Fzg1jIPUdPGSY3xF0cWPcDx2DlF4RpUKimG0DJQQJ99BFACYeBjFXJ3w3AAABACOG9Osf"
 AZURE_OPENAI_ENDPOINT= "https://bap-openai.openai.azure.com/"
 AZURE_OPENAI_DEPLOYMENT_NAME="gpt-41-mini"
@@ -38,11 +31,6 @@ AZURE_OPENAI_DEPLOYMENT = "gpt-4.1-mini"
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT ="text-embedding-3-small"
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME ="text-embedding-3-small"
 
-# https://bap-openai.openai.azure.com/openai/deployments/gpt-41-mini/chat/completions?api-version=2025-01-01-preview
-# AZURE_OPENAI_API_KEY=os.getenv("AZURE_OPENAI_API_KEY")
-# AZURE_OPENAI_ENDPOINT= os.getenv("AZURE_OPENAI_ENDPOINT")
-# AZURE_OPENAI_API_VERSION=os.getenv("AZURE_OPENAI_API_VERSION")
-# AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 DEFAULT_IMAGE_FORMAT = ".jpg"
 EMAIL_TO_PDF_PATH = "/data"
 
