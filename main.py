@@ -33,7 +33,7 @@ from backend.config.db_config import *
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.db.db_helper.db_utils import Dbutils
-from backend.models.all_db_models import Base
+from backend.models.metadata_extraction_json_embedding import Base
 from backend.prompts.summarization_prompt import TASK_VARIANTS
 from backend.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
@@ -420,22 +420,6 @@ async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 
     return {"results": results}
 
-#
-# @app.post("/query")
-# def query(question: str):
-#     try:
-#         embedder = Embedder(app.state.db_engine, app.state.db_session)
-#         answer = embedder.respond(question)
-#         return {"answer": answer}
-#     except ValueError as ve:
-#         raise HTTPException(status_code=400, detail={"error": str(ve)})
-#
-#     except json.JSONDecodeError:
-#         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-#
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
-#
 
 @app.post("/ingest")
 async def ingest_embedding(email_content:str, response_json:Dict[str,list]):

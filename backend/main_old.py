@@ -30,7 +30,7 @@ from backend.config.db_config import *
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
 from backend.db.db_helper.db_Initializer import DbInitializer
 from backend.db.db_helper.db_utils import Dbutils
-from backend.models.all_db_models import Base
+from backend.models.metadata_extraction_json_embedding import Base
 from backend.prompts.summarization_prompt import TASK_VARIANTS
 from backend.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
