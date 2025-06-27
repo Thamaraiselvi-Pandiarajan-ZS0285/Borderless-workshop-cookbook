@@ -1,6 +1,6 @@
 import logging
 
-from backend.app.core.base_agent import BaseAgent
+from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.prompts import SEMANTIC_DECOMPOSITION_PROMPT
 
 logger = logging.getLogger(__name__)

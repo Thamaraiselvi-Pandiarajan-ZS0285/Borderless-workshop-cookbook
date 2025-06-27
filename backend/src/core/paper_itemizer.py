@@ -5,7 +5,7 @@ import logging
 import pdfplumber
 from fastapi import HTTPException
 
-from backend.app.core.file_operations import FileToBase64
+from backend.src.core.file_operations import FileToBase64
 from backend.src.config import IMAGE_RESOLUTION, IMAGE_FORMATE
 from backend.src.utils.base_64_operations import Base64Utils
 from backend.src.utils.file_utils import FilePathUtils

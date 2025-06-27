@@ -13,15 +13,15 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
 
-from backend.app.core.classifier_agent import EmailClassifierProcessor
-from backend.app.core.embedder import Embedder
+from backend.src.core import EmailClassifierProcessor
+from backend.src.core import Embedder
 # from backend.app.core.embedder import Embedder
-from backend.app.core.file_operations import FileToBase64
-from backend.app.core.metadata_validation import MetadataValidatorAgent
-from backend.app.core.ocr_agent import EmailOCRAgent
-from backend.app.core.paper_itemizer import PaperItemizer
+from backend.src.core import FileToBase64
+from backend.src.core import MetadataValidatorAgent
+from backend.src.core import EmailOCRAgent
+from backend.src.core import PaperItemizer
 from backend.src.controller.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
-from backend.app.core.user_query_handler import UserQueryAgent
+from backend.src.core import UserQueryAgent
 
 from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
 from backend.src.controller.request_handler import PaperItemizerRequest
@@ -35,10 +35,10 @@ from backend.src.db.db_helper.db_utils import Dbutils
 from backend.src.db.models.metadata_extraction_json_embedding import Base
 from backend.src.prompts import TASK_VARIANTS
 from backend.src.utils.base_64_operations import Base64Utils
-from backend.app.core.summarization_agent import SummarizationAgent
+from backend.src.core import SummarizationAgent
 from backend.src.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.src.utils.file_utils import FilePathUtils
-from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.src.core import HTMLEmailToPDFConverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

@@ -1,14 +1,9 @@
 import asyncio
 import base64
-from operator import truediv
-from typing import Optional
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
-from openai import AzureOpenAI
 from pdf2image import convert_from_path
-
-from backend.app.core.file_operations import FileToBase64
 
 AZURE_OPENAI_API_KEY="2K3oZXs28WZE2y1Fzg1jIPUdPGSY3xF0cWPcDx2DlF4RpUKimG0DJQQJ99BFACYeBjFXJ3w3AAABACOG9Osf"
 AZURE_OPENAI_ENDPOINT= "https://bap-openai.openai.azure.com/"

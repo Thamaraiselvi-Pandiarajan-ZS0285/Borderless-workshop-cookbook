@@ -2,7 +2,7 @@ import json
 import tiktoken
 import logging
 from openai import AzureOpenAI
-from backend.app.core.base_agent import BaseAgent
+from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.prompts import CONFIDENCE_PROMPT
 from backend.src.prompts import VALIDATION_PROMPT
 from backend.src.prompts.trigger_reason_prompt import TRIGGER_REASON_PROMPT

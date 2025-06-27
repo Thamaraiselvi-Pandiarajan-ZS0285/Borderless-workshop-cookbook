@@ -4,7 +4,7 @@ from openai import AzureOpenAI
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.core.base_agent import BaseAgent
+from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.db.models.metadata_extraction_json_embedding import  EmailContentEmbedding, MetadataExtractionJsonEmbedding
 from sentence_transformers import CrossEncoder
 

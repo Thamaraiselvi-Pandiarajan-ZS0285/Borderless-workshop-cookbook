@@ -3,9 +3,9 @@ import os
 import uuid
 from http.client import HTTPException
 
-from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
-from backend.app.core.file_operations import FileToBase64
-from backend.app.core.paper_itemizer import PaperItemizer
+from backend.src.core import HTMLEmailToPDFConverter
+from backend.src.core import FileToBase64
+from backend.src.core import PaperItemizer
 from backend.src.controller.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
 from backend.src.config import DEFAULT_IMAGE_FORMAT

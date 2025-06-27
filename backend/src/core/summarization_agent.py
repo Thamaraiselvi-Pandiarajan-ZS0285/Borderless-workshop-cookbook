@@ -1,4 +1,4 @@
-from backend.app.core.base_agent import BaseAgent
+from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.prompts import SUMMARIZATION_PROMPT
 
 
