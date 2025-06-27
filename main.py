@@ -12,33 +12,31 @@ from typing import Dict, Any
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
 
-
-from backend.src.core import EmailClassifierProcessor
-from backend.src.core import Embedder
-# from backend.app.core.embedder import Embedder
-from backend.src.core import FileToBase64
-from backend.src.core import MetadataValidatorAgent
-from backend.src.core import EmailOCRAgent
-from backend.src.core import PaperItemizer
+from backend.src.config.db_config import POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME, \
+    POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO, SCHEMA_NAMES
+from backend.src.config.dev_config import BASE_PATH, DEFAULT_IMAGE_FORMAT
 from backend.src.controller.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
-from backend.src.core import UserQueryAgent
-
 from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
-from backend.src.controller.request_handler import PaperItemizerRequest
-from backend.src.controller.response_handler import build_email_classifier_response, \
+from backend.src.controller.request_handler.paper_itemizer import PaperItemizerRequest
+from backend.src.controller.response_handler.email_classifier_response import build_email_classifier_response, \
     email_classify_response_via_vlm
 from backend.src.controller.response_handler.file_operations_reponse import build_encode_file_response
-from backend.src.controller.response_handler import build_paper_itemizer_response
-from backend.src.config import DEFAULT_IMAGE_FORMAT
+from backend.src.controller.response_handler.paper_itemizer import build_paper_itemizer_response
+from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
+from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
+from backend.src.core.email_classifier.summarization_agent import SummarizationAgent
+from backend.src.core.embeding.embedder import Embedder
+from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.src.core.ingestion.paper_itemizer import PaperItemizer
+from backend.src.core.meta_extractor.metadata_validation import MetadataValidatorAgent
+from backend.src.core.retrival.user_query_handler import UserQueryAgent
 from backend.src.db.db_helper.db_Initializer import DbInitializer
 from backend.src.db.db_helper.db_utils import Dbutils
 from backend.src.db.models.metadata_extraction_json_embedding import Base
-from backend.src.prompts import TASK_VARIANTS
-from backend.src.utils.base_64_operations import Base64Utils
-from backend.src.core import SummarizationAgent
+from backend.src.prompts.summarization_prompt import TASK_VARIANTS
+from backend.src.utils.base_64_ops.base_64_utils import encode_file_to_base64, is_valid_base64, decode_base64
 from backend.src.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
-from backend.src.utils.file_utils import FilePathUtils
-from backend.src.core import HTMLEmailToPDFConverter
+from backend.src.utils.file_ops.file_utils import file_save
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -75,8 +73,8 @@ async def lifespan(application: FastAPI):
         logger.info("Creating all tables...")
         db_helper.create_all_table()
         db_helper.print_all_tables()
-        Base.metadata.create_all(application.state.db_engine)  # Create tables
-
+        Base.metadata.create_all(application.state.db_engine)
+        application.state.base_path = BASE_PATH
         logger.info("Tables created successfully.")
 
 
@@ -110,15 +108,13 @@ async def do_encode(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="No file provided.")
 
         try:
-            file_utils = FilePathUtils(file)
-            file_path = file_utils.file_path_based_file_save()
+            file_path = file_save(file, file.filename, app.state.base_path)
         except Exception as e:
             logger.error(f"Error saving file: {e}")
             raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
         try:
-            base64_encoder = FileToBase64(file_path)
-            encoded_data = base64_encoder.do_base64_encoding_by_file_path()
+            encoded_data = encode_file_to_base64(file_path)
         except Exception as e:
             logger.error(f"Error encoding file: {e}")
             raise HTTPException(status_code=500, detail="Failed to encode file to Base64.")
@@ -146,17 +142,17 @@ async def decode_file(
     extension: str = Body(".jpg", embed=True)
 ):
     try:
-        base64_validator = Base64Utils.is_valid_base64(base64_string)
+        base64_validator =is_valid_base64(base64_string)
         if not base64_validator :
             logger.warning("Invalid base64 input received.")
             raise HTTPException(status_code=400, detail="Provided string is not valid base64.")
 
-        file_utils = FilePathUtils(file=None, temp_dir=None)
-        output_dir = file_utils.file_dir()
+        output_dir = app.state.base_path
         safe_file_name = f"{file_name}_{uuid.uuid4().hex}{extension}"
         output_path = os.path.join(output_dir, safe_file_name)
 
-        FileToBase64.decode_base64_to_file(base64_string, output_path)
+        decoded_data = decode_base64(base64_string)
+        file_save(decoded_data,file_name,output_dir)
 
         mime_type, _ = mimetypes.guess_type(output_path)
         media_type = mime_type or "application/octet-stream"
@@ -235,10 +231,9 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         if not isinstance(email_data, dict):
             raise ValueError("The uploaded JSON must be an object.")
 
-        file_utils = FilePathUtils(file=email_file, temp_dir=None)
-        output_dir = file_utils.file_dir()
+        output_dir = app.state.base_path
         os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
-        file_name = file_utils.get_file_name()
+        file_name = email_file.filename
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
         pdf_converter = HTMLEmailToPDFConverter()
         pdf_converter.convert_to_pdf(email_data, pdf_path)
@@ -275,25 +270,19 @@ async def do_classify(email: EmailClassificationRequest):
         email_and_attachment_summary:str=""
 
         if email.hasAttachments:
-            # Step 1: Extract raw attachment content
             attachment_content = extractor.extract_many(email.attachments)
 
-            # Step 2: Split into page-wise chunks
             pages = split_into_pages(attachment_content)
 
-            # Step 3: Summarize each page individually
             page_summaries = []
             for idx, page in enumerate(pages):
                 summary = summarizer.summarize_text(page)
                 page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
 
-            # Step 4: Generate final summary from all page summaries
             combined_summaries_text = "\n\n".join(page_summaries)
             attachment_summary = await summarizer.summarize_text(combined_summaries_text)
 
-        # Step 5: Append final summary to the body
         full_body += "Attachment Summary\n\n" + attachment_summary
-        # Step 6: Process classification
         email_classification = await processor.process_email(email.subject, full_body)
 
         for label, variant in TASK_VARIANTS.items():
