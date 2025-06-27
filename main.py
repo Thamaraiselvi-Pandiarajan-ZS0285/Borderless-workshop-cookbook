@@ -1,59 +1,134 @@
+"""
+FastAPI Application for Email Processing and Document Management
+
+This application provides endpoints for:
+- Email classification and processing
+- Document conversion and itemization
+- Base64 encoding/decoding operations
+- Metadata extraction from images
+- Semantic search and query processing
+
+Author: Borderless Access Team
+Version: 1.0.0
+"""
+
 import base64
-import logging
-import os
-import uuid
-import mimetypes
 import json
+import logging
+import mimetypes
+import os
 import re
+import uuid
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 from typing import Dict, Any
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
+from pydantic import ValidationError
 
+# Import configuration modules
+from backend.src.config.db_config import (
+    POSTGRESQL_DRIVER_NAME, POSTGRESQL_HOST, POSTGRESQL_DB_NAME,
+    POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO, SCHEMA_NAMES
+)
+from backend.src.config.dev_config import BASE_PATH, DEFAULT_IMAGE_FORMAT
 
-from backend.app.core.classifier_agent import EmailClassifierProcessor
-from backend.app.core.embedder import Embedder
-# from backend.app.core.embedder import Embedder
-from backend.app.core.file_operations import FileToBase64
-from backend.app.core.metadata_consolidator import MetadataConsolidatorAgent
-from backend.app.core.metadata_validation import MetadataValidatorAgent
-from backend.app.core.ocr_agent import EmailOCRAgent
-from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
-from backend.app.core.user_query_handler import UserQueryAgent
+# Import request/response handlers
+from backend.src.controller.request_handler.email_request import (
+    EmailClassificationRequest, EmailClassifyImageRequest
+)
+from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
+from backend.src.controller.request_handler.paper_itemizer import PaperItemizerRequest
+from backend.src.controller.response_handler.email_classifier_response import (
+    build_email_classifier_response, email_classify_response_via_vlm
+)
+from backend.src.controller.response_handler.file_operations_reponse import build_encode_file_response
+from backend.src.controller.response_handler.paper_itemizer import build_paper_itemizer_response
 
-from backend.app.request_handler.metadata_extraction import EmailImageRequest
-from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
-    email_classify_response_via_vlm
-from backend.app.response_handler.file_operations_reponse import build_encode_file_response
-from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
-from backend.config.db_config import *
-from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
-from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.db.db_helper.db_utils import Dbutils
-from backend.models.all_db_models import Base
-from backend.prompts.summarization_prompt import TASK_VARIANTS
-from backend.utils.base_64_operations import Base64Utils
-from backend.app.core.summarization_agent import SummarizationAgent
-from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
-from backend.utils.file_utils import FilePathUtils
-from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+# Import core processing modules
+from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
+from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
+from backend.src.core.email_classifier.summarization_agent import SummarizationAgent
+from backend.src.core.embeding.embedder import Embedder
+from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.src.core.ingestion.paper_itemizer import PaperItemizer
+from backend.src.core.meta_extractor.metadata_validation import MetadataValidatorAgent
+from backend.src.core.retrival.user_query_handler import UserQueryAgent
 
-from sqlalchemy.engine.base import Engine
-from sqlalchemy.orm import sessionmaker
+# Import database modules
+from backend.src.db.db_helper.db_Initializer import DbInitializer
+from backend.src.db.db_helper.db_utils import Dbutils
+from backend.src.db.models.metadata_extraction_json_embedding import Base
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# Import utility modules
+from backend.src.prompts.summarization_prompt import TASK_VARIANTS
+from backend.src.utils.base_64_ops.base_64_utils import (
+    encode_file_to_base64, is_valid_base64, decode_base64
+)
+from backend.src.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
+from backend.src.utils.file_ops.file_utils import file_save
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
+
+class DatabaseError(Exception):
+    """Custom exception for database-related errors."""
+    pass
+
+
+class FileProcessingError(Exception):
+    """Custom exception for file processing errors."""
+    pass
+
+
+class ValidationError(Exception):
+    """Custom exception for validation errors."""
+    pass
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    """
+    Manage the application lifespan, including database initialization and cleanup.
+
+    Args:
+        application (FastAPI): The FastAPI application instance
+
+    Yields:
+        None: Control to the application
+
+    Raises:
+        DatabaseError: If database initialization fails
+    """
     logger.info("Starting application lifespan...")
 
+    try:
+        await _initialize_database(application)
+        logger.info("Application initialization completed successfully.")
+        yield
+    except Exception as e:
+        logger.error("Critical error during application startup: %s", str(e), exc_info=True)
+        raise DatabaseError(f"Failed to initialize application: {str(e)}")
+    finally:
+        await _cleanup_database(application)
+
+
+async def _initialize_database(application: FastAPI) -> None:
+    """
+    Initialize database connections and schema.
+
+    Args:
+        application (FastAPI): The FastAPI application instance
+
+    Raises:
+        DatabaseError: If database initialization fails
+    """
     try:
         logger.info("Initializing database connection...")
 
@@ -68,492 +143,843 @@ async def lifespan(application: FastAPI):
 
         application.state.db_engine = db_init.db_create_engin()
         application.state.db_session = db_init.db_create_session()
+        application.state.base_path = BASE_PATH
 
         logger.info("Database engine and session created successfully.")
-        logger.info("Initializing database helper...")
+
+        # Initialize database schema
         db_helper = Dbutils(application.state.db_engine, SCHEMA_NAMES)
-
-        logger.info("Creating all schemas...")
         db_helper.create_all_schema()
-        logger.info("Schemas created successfully.")
-
-        logger.info("Creating all tables...")
         db_helper.create_all_table()
-        db_helper.print_all_tables()
-        Base.metadata.create_all(application.state.db_engine)  # Create tables
+        Base.metadata.create_all(application.state.db_engine)
 
-        logger.info("Tables created successfully.")
-
+        logger.info("Database schema and tables created successfully.")
 
     except Exception as e:
-        logger.error("Error during database initialization: %s", str(e), exc_info=True)
-        raise
+        logger.error("Database initialization failed: %s", str(e), exc_info=True)
+        raise DatabaseError(f"Database initialization failed: {str(e)}")
 
-    try:
-        yield
-    finally:
-        if hasattr(application.state, "db_engine"):
-            logger.info("Closing database connection...")
-            application.state.db_engine.dispose()
-            logger.info("Database connection closed.")
 
-app = FastAPI(title="Borderless Access", swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}}, lifespan=lifespan)
+async def _cleanup_database(application: FastAPI) -> None:
+    """
+    Clean up database connections.
+
+    Args:
+        application (FastAPI): The FastAPI application instance
+    """
+    if hasattr(application.state, "db_engine"):
+        logger.info("Closing database connection...")
+        application.state.db_engine.dispose()
+        logger.info("Database connection closed successfully.")
+
+
+# Initialize FastAPI application
+app = FastAPI(
+    title="Borderless Access API",
+    description="API for email processing, document management, and semantic search",
+    version="1.0.0",
+    swagger_ui_parameters={"syntaxHighlight": {"theme": "obsidian"}},
+    lifespan=lifespan
+)
+
 logger.info("FastAPI application initialized.")
 
 
+@app.get("/", tags=["Health Check"])
+def health_check():
+    """
+    Health check endpoint to verify API availability.
 
-@app.get("/")
-def home():
-    return {"message": "Welcome to Borderless Access!"}
+    Returns:
+        dict: Welcome message and API status
+    """
+    return {
+        "message": "Welcome to Borderless Access API!",
+        "status": "healthy",
+        "version": "1.0.0"
+    }
 
 
-@app.post("/api/encode")
-async def do_encode(file: UploadFile = File(...)):
+@app.post("/api/encode", tags=["File Operations"])
+async def encode_file(file: UploadFile = File(...)):
+    """
+    Encode an uploaded file to Base64 format.
+
+    Args:
+        file (UploadFile): The file to be encoded
+
+    Returns:
+        JSONResponse: Base64 encoded file data with metadata
+
+    Raises:
+        HTTPException: If file upload or encoding fails
+    """
+    if not file or not file.filename:
+        logger.warning("No file uploaded for encoding.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided."
+        )
+
     try:
-        if not file or not file.filename:
-            logger.warning("No file uploaded.")
-            raise HTTPException(status_code=400, detail="No file provided.")
+        # Save uploaded file
+        content = await file.read()
+        file_path = file_save(content, file.filename, app.state.base_path)
+        logger.info("File saved successfully: %s", file_path)
 
-        try:
-            file_utils = FilePathUtils(file)
-            file_path = file_utils.file_path_based_file_save()
-        except Exception as e:
-            logger.error(f"Error saving file: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
-
-        try:
-            base64_encoder = FileToBase64(file_path)
-            encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-        except Exception as e:
-            logger.error(f"Error encoding file: {e}")
-            raise HTTPException(status_code=500, detail="Failed to encode file to Base64.")
+        # Encode file to Base64
+        encoded_data = encode_file_to_base64(file_path)
+        logger.info("File encoded successfully: %s", file.filename)
 
         return build_encode_file_response(encoded_data, 200, "File encoded successfully")
 
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"statusCode": http_err.status_code, "message": http_err.detail, "response": None}
-        )
-
-    except Exception as unhandled:
-        logger.error(f"Error encoding file: {unhandled}")
-        return JSONResponse(
-            status_code=500,
-            content={"statusCode": 500, "message": "unhandled exception occurred", "response": unhandled}
+    except Exception as e:
+        logger.error("Error encoding file '%s': %s", file.filename, str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to encode file: {str(e)}"
         )
 
 
-@app.post("/api/decode", response_class=FileResponse)
+@app.post("/api/decode", response_class=FileResponse, tags=["File Operations"])
 async def decode_file(
     base64_string: str = Body(..., embed=True),
     file_name: str = Body("decoded_file", embed=True),
     extension: str = Body(".jpg", embed=True)
 ):
-    try:
-        base64_validator = Base64Utils.is_valid_base64(base64_string)
-        if not base64_validator :
-            logger.warning("Invalid base64 input received.")
-            raise HTTPException(status_code=400, detail="Provided string is not valid base64.")
+    """
+    Decode a Base64 string to a file and return it for download.
 
-        file_utils = FilePathUtils(file=None, temp_dir=None)
-        output_dir = file_utils.file_dir()
+    Args:
+        base64_string (str): Base64 encoded file data
+        file_name (str): Name for the decoded file
+        extension (str): File extension for the decoded file
+
+    Returns:
+        FileResponse: The decoded file for download
+
+    Raises:
+        HTTPException: If Base64 decoding fails or file creation fails
+    """
+    try:
+        # Validate Base64 input
+        if not is_valid_base64(base64_string):
+            logger.warning("Invalid Base64 input received.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provided string is not valid Base64."
+            )
+
+        # Generate safe file path
+        output_dir = app.state.base_path
         safe_file_name = f"{file_name}_{uuid.uuid4().hex}{extension}"
         output_path = os.path.join(output_dir, safe_file_name)
 
-        FileToBase64.decode_base64_to_file(base64_string, output_path)
+        # Decode and save file
+        decoded_data = decode_base64(base64_string)
+        with open(output_path, 'wb') as f:
+            f.write(decoded_data)
 
+        # Determine MIME type
         mime_type, _ = mimetypes.guess_type(output_path)
         media_type = mime_type or "application/octet-stream"
 
-        logger.info(f"Decoded file saved at {output_path}, returning as download.")
+        logger.info("File decoded and saved successfully: %s", output_path)
         return FileResponse(
             path=output_path,
             filename=f"{file_name}{extension}",
             media_type=media_type
         )
 
-    except HTTPException as http_ex:
-        raise http_ex
-
-    except base64.binascii.Error as decode_err:
-        logger.error("Base64 decoding failed: %s", str(decode_err), exc_info=True)
-        raise HTTPException(status_code=400, detail="Invalid base64 data. Cannot decode.")
-
-    except Exception as e:
-        logger.exception(f"Unhandled exception during decoding. {e}")
-        raise HTTPException(status_code=500, detail="Internal server error while decoding file.")
-
-
-
-
-@app.post("/api/paper-itemizer")
-async def do_paper_itemizer(request: PaperItemizerRequest):
-    logger.info("Received paper itemizer request for file: %s", request.file_name)
-
-    try:
-        paper_itemizer_object = PaperItemizer(
-            input=request.input,
-            file_name=request.file_name,
-            extension = request.file_extension
-        )
-
-        result = paper_itemizer_object.do_paper_itemizer()
-
-        logger.info("Successfully processed file: %s", request.file_name)
-        return build_paper_itemizer_response(result, 200, "Paper itemization successful.")
-
-    except base64.binascii.Error as decode_err:
-        logger.error("Base64 decoding failed for file %s: %s", request.file_name, str(decode_err), exc_info=True)
+    except base64.binascii.Error as e:
+        logger.error("Base64 decoding failed: %s", str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid base64 input. Decoding failed."
+            detail="Invalid Base64 data. Cannot decode."
+        )
+    except Exception as e:
+        logger.error("Error decoding file: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error while decoding file."
         )
 
-    except HTTPException as http_ex:
-        logger.warning("HTTPException raised for file %s: %s", request.file_name, str(http_ex.detail), exc_info=True)
-        raise http_ex
 
+@app.post("/api/paper-itemizer", tags=["Document Processing"])
+async def itemize_paper(request: PaperItemizerRequest):
+    """
+    Process a document and split it into individual items/pages.
+
+    Args:
+        request (PaperItemizerRequest): Request containing file data and metadata
+
+    Returns:
+        JSONResponse: Itemized document data
+
+    Raises:
+        HTTPException: If document processing fails
+    """
+    logger.info("Processing paper itemization for file: %s", request.file_name)
+
+    try:
+        # Validate request
+        if not request.input:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No input data provided."
+            )
+
+        # Initialize paper itemizer
+        paper_itemizer = PaperItemizer(
+            input=request.input,
+            file_name=request.file_name,
+            extension=request.file_extension
+        )
+
+        # Process document
+        result = paper_itemizer.do_paper_itemizer()
+
+        logger.info("Paper itemization completed successfully for: %s", request.file_name)
+        return build_paper_itemizer_response(result, 200, "Paper itemization successful.")
+
+    except base64.binascii.Error as e:
+        logger.error("Base64 decoding failed for file '%s': %s", request.file_name, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Base64 input. Decoding failed."
+        )
     except Exception as e:
-        logger.exception("Unexpected error while processing file %s: %s", request.file_name, str(e))
+        logger.error("Error processing file '%s': %s", request.file_name, str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error occurred while processing the file."
         )
 
 
-@app.post("/api/convert/email-to-pdf")
+@app.post("/api/convert/email-to-pdf", response_class=FileResponse, tags=["Email Processing"])
 async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileResponse:
     """
     Convert a JSON-formatted email to a PDF document.
 
     Args:
-        email_file (UploadFile): A JSON file containing email fields like subject, sender, received_at, etc.
+        email_file (UploadFile): JSON file containing email data
 
     Returns:
-        FileResponse: The generated PDF file.
+        FileResponse: Generated PDF file
+
+    Raises:
+        HTTPException: If email conversion fails
     """
     try:
+        # Read and parse email data
         contents = await email_file.read()
+
+        if not contents:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Empty file provided."
+            )
+
         email_data = json.loads(contents)
 
         if not isinstance(email_data, dict):
-            raise ValueError("The uploaded JSON must be an object.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The uploaded JSON must be an object."
+            )
 
-        file_utils = FilePathUtils(file=email_file, temp_dir=None)
-        output_dir = file_utils.file_dir()
-        os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
-        file_name = file_utils.get_file_name()
+        # Generate PDF
+        output_dir = app.state.base_path
+        os.makedirs(output_dir, exist_ok=True)
+
+        file_name = email_file.filename or "email"
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+
         pdf_converter = HTMLEmailToPDFConverter()
         pdf_converter.convert_to_pdf(email_data, pdf_path)
 
-        logger.info(f"✅ PDF generated at: {pdf_path}")
+        logger.info("PDF generated successfully: %s", pdf_path)
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
             filename="converted_email.pdf"
         )
 
-    except JSONDecodeError:
-        logger.exception("❌ Uploaded file is not valid JSON.")
-        raise HTTPException(status_code=400, detail="Uploaded file is not a valid JSON object.")
-
-    except ValueError as ve:
-        logger.exception("❌ Validation error in uploaded email JSON.")
-        raise HTTPException(status_code=400, detail=str(ve))
-
+    except JSONDecodeError as e:
+        logger.error("Invalid JSON in uploaded file: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is not a valid JSON object."
+        )
     except Exception as e:
-        logger.exception("❌ Unexpected error during PDF conversion.")
-        raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
+        logger.error("Error converting email to PDF: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing email: {str(e)}"
+        )
 
-@app.post("/api/classify_email")
-def do_classify(email: EmailClassificationRequest):
 
+@app.post("/api/classify_email", tags=["Email Processing"])
+async def classify_email(email: EmailClassificationRequest):
+    """
+    Classify an email and generate summaries for different tasks.
+
+    Args:
+        email (EmailClassificationRequest): Email data for classification
+
+    Returns:
+        dict: Email classification results and summaries
+
+    Raises:
+        HTTPException: If email classification fails
+    """
     try:
+        # Initialize processors
         processor = EmailClassifierProcessor()
         summarizer = SummarizationAgent()
         extractor = AttachmentExtractor()
 
         full_body = email.body
-        attachment_summary:str=""
-        email_and_attachment_summary:str=""
+        attachment_summary = ""
+        email_and_attachment_summary = ""
 
-        if email.hasAttachments:
-            # Step 1: Extract raw attachment content
-            attachment_content = extractor.extract_many(email.attachments)
+        # Process attachments if present
+        if email.hasAttachments and email.attachments:
+            try:
+                attachment_content = extractor.extract_many(email.attachments)
+                pages = split_into_pages(attachment_content)
 
-            # Step 2: Split into page-wise chunks
-            pages = split_into_pages(attachment_content)
+                # Summarize each page
+                page_summaries = []
+                for idx, page in enumerate(pages):
+                    summary = await summarizer.summarize_text(page)
+                    page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
 
-            # Step 3: Summarize each page individually
-            page_summaries = []
-            for idx, page in enumerate(pages):
-                summary = summarizer.summarize_text(page)
-                page_summaries.append(f"Page {idx+1} Summary:\n{summary}")
+                # Generate final attachment summary
+                combined_summaries_text = "\n\n".join(page_summaries)
+                attachment_summary = await summarizer.summarize_text(combined_summaries_text)
 
-            # Step 4: Generate final summary from all page summaries
-            combined_summaries_text = "\n\n".join(page_summaries)
-            attachment_summary = summarizer.summarize_text(combined_summaries_text)
+            except Exception as e:
+                logger.warning("Error processing attachments: %s", str(e))
+                attachment_summary = "Error processing attachments"
 
-        # Step 5: Append final summary to the body
-        full_body += "Attachment Summary\n\n" + attachment_summary
-        # Step 6: Process classification
-        email_classification = processor.process_email(email.subject, full_body)
+        # Combine email content with attachment summary
+        full_body += "\n\nAttachment Summary:\n" + attachment_summary
 
+        # Classify email
+        email_classification = await processor.process_email(email.subject, full_body)
+
+        # Generate task-specific summaries
         for label, variant in TASK_VARIANTS.items():
-            summary_response = summarizer.summarize_text(full_body, variant)
-            email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+            try:
+                summary_response = await summarizer.summarize_text(full_body, variant)
+                email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+            except Exception as e:
+                logger.warning("Error generating summary for %s: %s", label, str(e))
+                email_and_attachment_summary += f"{label}:\nError generating summary\n\n"
 
-        return build_email_classifier_response(email,email_classification,email_and_attachment_summary)
+        return build_email_classifier_response(email, email_classification, email_and_attachment_summary)
 
-    except JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
+    except ValidationError as e:
+        logger.error("Validation error in email classification: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation error: {str(e)}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+        logger.error("Error classifying email: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
-@app.post("/api/classify_email_vlm")
-def do_classify_via_vlm(request: EmailClassifyImageRequest):
+@app.post("/api/classify_email_vlm", tags=["Email Processing"])
+async def classify_email_with_vision(request: EmailClassifyImageRequest):
+    """
+    Classify email using Vision Language Model (VLM) for image analysis.
+
+    Args:
+        request (EmailClassifyImageRequest): Request containing email data and images
+
+    Returns:
+        dict: Email classification results with vision-based analysis
+
+    Raises:
+        HTTPException: If VLM classification fails
+    """
     try:
+        # Initialize processors
         classifier = EmailClassifierProcessor()
         summarizer = SummarizationAgent()
         extractor = AttachmentExtractor()
 
         full_email_content = request.json_data.body
-        attachment_summary: str = ""
-        email_and_attachment_summary: str = ""
+        attachment_summary = ""
+        email_and_attachment_summary = ""
 
-        if request.json_data.hasAttachments:
-            # Step 1: Extract raw attachment content
-            attachment_content = extractor.extract_many(request.json_data.attachments)
+        # Process attachments
+        if request.json_data.hasAttachments and request.json_data.attachments:
+            try:
+                attachment_content = extractor.extract_many(request.json_data.attachments)
+                pages = split_into_pages(attachment_content)
 
-            # Step 2: Split into page-wise chunks
-            pages = split_into_pages(attachment_content)
+                page_summaries = []
+                for idx, page in enumerate(pages):
+                    summary = await summarizer.summarize_text(page)
+                    page_summaries.append(f"Page {idx + 1} Summary:\n{summary}")
 
-            # Step 3: Summarize each page individually
-            page_summaries = []
-            for idx, page in enumerate(pages):
-                summary = summarizer.summarize_text(page)
-                page_summaries.append(f"Page {idx + 1} Summary:\n{summary}")
+                combined_summaries_text = "\n\n".join(page_summaries)
+                attachment_summary = await summarizer.summarize_text(combined_summaries_text)
 
-            # Step 4: Generate final summary from all page summaries
-            combined_summaries_text = "\n\n".join(page_summaries)
-            attachment_summary = summarizer.summarize_text(combined_summaries_text)
+            except Exception as e:
+                logger.warning("Error processing attachments: %s", str(e))
+                attachment_summary = "Error processing attachments"
 
-        # Step 5: Append final summary to the body
-        full_email_content += "Attachment Summary\n\n" + attachment_summary
+        full_email_content += "\n\nAttachment Summary:\n" + attachment_summary
+
+        # Process images with VLM
         extracted_texts = []
-        # Step 6: classify the email via vlm
         for item in request.imagedata:
             try:
-                # Resolve image to base64 string
+                # Resolve image to base64
                 if os.path.exists(item.input_path):
-                    base64_converter = FileToBase64(item.input_path)
-                    base64_image = base64_converter.do_base64_encoding()
+                    base64_image = encode_file_to_base64(item.input_path)
                 else:
                     if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
                         raise ValueError("Invalid base64 input or unreadable image path.")
                     base64_image = item.input_path
-                extracted_text = classifier.classify_via_vlm(base64_image)
+
+                # Extract text using VLM
+                extracted_text = await classifier.classify_via_vlm(base64_image)
                 extracted_texts.append(extracted_text)
+
             except Exception as e:
-                logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
+                logger.error("Failed to extract text from image %s: %s", item.file_name, str(e))
+                extracted_texts.append(f"Error processing {item.file_name}: {str(e)}")
+
+        # Generate task-specific summaries
         for label, variant in TASK_VARIANTS.items():
-            summary_response = summarizer.summarize_text(full_email_content, variant)
-            email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
-        return email_classify_response_via_vlm(request,extracted_texts,email_and_attachment_summary)
+            try:
+                summary_response = await summarizer.summarize_text(full_email_content, variant)
+                email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
+            except Exception as e:
+                logger.warning("Error generating summary for %s: %s", label, str(e))
+                email_and_attachment_summary += f"{label}:\nError generating summary\n\n"
+
+        return email_classify_response_via_vlm(request, extracted_texts, email_and_attachment_summary)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+        logger.error("Error in VLM email classification: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
-@app.post("/api/extraction/metadata_extractor")
-def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
+@app.post("/api/extraction/metadata_extractor", tags=["Metadata Extraction"])
+async def extract_metadata_from_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
-    Accepts a list of email image inputs (either file path or base64 string),
-    extracts metadata using OCR and LLM, and returns the result per file.
+    Extract metadata from email images using OCR and LLM processing.
 
     Args:
-        request (EmailImageRequest): List of image items with `file_name`, `file_extension`, and `input` fields.
+        request (EmailImageRequest): List of image items for metadata extraction
 
     Returns:
-        dict: Extraction result or error per file in the `results` list.
+        dict: Extraction results for each image
+
+    Raises:
+        HTTPException: If metadata extraction fails
     """
+    if not request.data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No image data provided."
+        )
+
     results = []
     ocr_agent = EmailOCRAgent()
     validator_agent = MetadataValidatorAgent()
-    consolidator_agent = MetadataConsolidatorAgent()
-
-    extracted_jsons = []
-    errors = []
-    if request.data[0].category.lower() in "rfp":
-        email_category="rfp"
-    elif request.data[0].category.lower() in "bid-win":
-        email_category="bid-win"
-    elif request.data[0].category.lower() in "rejection":
-        email_category="rejection"
-    else:
-        return {"error": "Human in the loop needed"}
-
 
     for item in request.data:
         try:
-            # Resolve image to base64 string
+            # Resolve image to base64
             if os.path.exists(item.input):
-                base64_converter = FileToBase64(item.input)
-                base64_image = base64_converter.do_base64_encoding()
+                base64_image = encode_file_to_base64(item.input)
             else:
                 if not item.input.startswith("data:image") and len(item.input) < 100:
                     raise ValueError("Invalid base64 input or unreadable image path.")
                 base64_image = item.input
 
-            # OCR extraction
-            extracted_text = ocr_agent.extract_text_from_base64(base64_image, email_category)
+            # Extract text using OCR
+            extracted_text = await ocr_agent.extract_text_from_base64(base64_image, item.category)
+
+            # Clean extracted JSON
             cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
 
-            # Validate each extracted metadata
-            validation_result = validator_agent.validate_metadata(cleaned_json_string, email_category)
-            extracted_jsons.append(cleaned_json_string)
+            # Validate metadata
+            validation_result = validator_agent.validate_metadata(cleaned_json_string, item.category)
+
+            # Parse and store results
+            try:
+                parsed_metadata = json.loads(cleaned_json_string)
+                results.append({
+                    "file_name": item.file_name,
+                    "file_extension": item.file_extension,
+                    "extracted_metadata": parsed_metadata,
+                    "validation_result": validation_result
+                })
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse JSON from extracted text: {str(e)}")
 
         except Exception as e:
-            logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
-            errors.append({
+            logger.error("Failed to extract metadata for %s: %s", item.file_name, str(e), exc_info=True)
+            results.append({
                 "file_name": item.file_name,
                 "file_extension": item.file_extension,
                 "error": str(e)
             })
 
-    if errors:
-        return {"errors": errors}
+    return {"results": results}
 
-    # Consolidate all validated JSON strings into one final metadata
+
+@app.post("/api/ingest", tags=["Data Ingestion"])
+async def ingest_embeddings(email_content: str, response_json: Dict[str, Any]):
+    """
+    Ingest email content and metadata into the embedding database.
+
+    Args:
+        email_content (str): The email content to embed
+        response_json (Dict[str, Any]): Metadata to embed
+
+    Returns:
+        dict: Ingestion status
+
+    Raises:
+        HTTPException: If embedding ingestion fails
+    """
     try:
-        consolidated_metadata = consolidator_agent.consolidate(extracted_jsons, category=email_category)
-        return {
-            "consolidated_metadata": consolidated_metadata
-        }
+        if not email_content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email content cannot be empty."
+            )
+
+        if not response_json:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Response JSON cannot be empty."
+            )
+
+        embedder = Embedder(app.state.db_engine, app.state.db_session)
+
+        # Process JSON metadata
+        minified = await embedder.minify_json(response_json)
+        if not minified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or empty JSON for embedding."
+            )
+
+        # Generate and store embeddings
+        json_embedding = await embedder.embed_text(minified)
+        embedder.ingest_email_metadata_json("sender@example.com", minified, json_embedding)
+
+        content_embedding = await embedder.embed_text(email_content)
+        embedder.ingest_email_for_content("sender@example.com", email_content, content_embedding)
+
+        logger.info("Successfully ingested embeddings for email content and metadata.")
+        return {"status": "success", "message": "Embeddings ingested successfully"}
+
     except Exception as e:
-        logger.error(f"Metadata consolidation failed: {e}", exc_info=True)
-        return {"error": f"Consolidation failed: {str(e)}"}
+        logger.error("Error ingesting embeddings: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to ingest embeddings: {str(e)}"
+        )
 
 
-#
-# @app.post("/query")
-# def query(question: str):
-#     try:
-#         embedder = Embedder(app.state.db_engine, app.state.db_session)
-#         answer = embedder.respond(question)
-#         return {"answer": answer}
-#     except ValueError as ve:
-#         raise HTTPException(status_code=400, detail={"error": str(ve)})
-#
-#     except json.JSONDecodeError:
-#         raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
-#
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
-#
+@app.post("/api/all-in-one", tags=["Integrated Processing"])
+async def process_email_comprehensive(email_file: EmailClassificationRequest):
+    """
+    Comprehensive email processing pipeline including conversion, itemization,
+    classification, metadata extraction, and embedding ingestion.
 
-@app.post("/ingest")
-def ingest_embedding(email_content:str, response_json:Dict[str,list]):
+    Args:
+        email_file (EmailClassificationRequest): Email data for comprehensive processing
 
-    embedder = Embedder(app.state.db_engine, app.state.db_session)
-    minified = embedder.minify_json(response_json)
-    if not minified:
-        raise HTTPException(status_code=400, detail="Invalid or empty JSON for embedding.")
-    json_embedding = embedder.embed_text(minified)
-    embedder.ingest_email_metadata_json( "sender@yahoo.com",minified,json_embedding)
+    Returns:
+        dict: Complete processing results
 
-    content_embedding = embedder.embed_text(email_content)
-    embedder.ingest_email_for_content("sender@yahoo.com",email_content, content_embedding)
-
-
-@app.post("/api/all-in-one")
-async def test(email_file: EmailClassificationRequest):
+    Raises:
+        HTTPException: If any step in the pipeline fails
+    """
     try:
-
-        email_data = email_file.model_dump()  # to do: if body is html, convert to pdf using pdf plumber
+        email_data = email_file.model_dump()
 
         if not isinstance(email_data, dict):
-            raise ValueError("The uploaded JSON must be an object.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email data format."
+            )
 
-        file_utils = FilePathUtils(file=None, temp_dir=None)
-        output_dir = file_utils.file_dir()
+        # Step 1: Convert email to PDF
+        output_dir = app.state.base_path
         os.makedirs(output_dir, exist_ok=True)
         file_name = str(uuid.uuid4())
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
-        # email to pdf
+
         pdf_converter = HTMLEmailToPDFConverter()
-        pdf_converter.convert_to_pdf(email_data, pdf_path)
-        # encode
-        base64_encoder = FileToBase64(pdf_path)
-        encoded_data = base64_encoder.do_base64_encoding_by_file_path()
-        # paper-itemizer
-        paper_itemizer_object = PaperItemizer(
+        pdf_saved_path = pdf_converter.convert_to_pdf(email_data, pdf_path)
+        logger.info("Email converted to PDF: %s", pdf_saved_path)
+
+        # Step 2: Encode PDF to base64
+        encoded_data = encode_file_to_base64(pdf_path)
+
+        # Step 3: Paper itemization
+        paper_itemizer = PaperItemizer(
             input=encoded_data,
             file_name=file_name,
-            extension=DEFAULT_IMAGE_FORMAT
+            extension=DEFAULT_IMAGE_FORMAT,
+            pdf_file_path=pdf_saved_path
         )
+        results = paper_itemizer.do_paper_itemizer()
+        logger.info("Paper itemization completed with %d items", len(results))
 
-        results = paper_itemizer_object.do_paper_itemizer()
-        # classification
-        # classification_result = do_classify(email_file)
-
+        # Step 4: Process each itemized result
         email_image_request = []
         summaries = []
-        classify_image_request_data = {"imagedata": [], "json_data": email_file}
+
         for result in results:
-            input_data = result["filePath"]
-            file_extension = result["fileExtension"]
-            file_name = result["fileName"]
-            classify_image_request_data["imagedata"].append(
-                {"input_path": input_data, "file_name": file_name, "file_extension": file_extension})
-            classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
-            classify_via_llm = do_classify_via_vlm(classify_image_request)
-            category = classify_via_llm.classification[0]
-            summary = classify_via_llm.summary
-            summaries.append(summary)
-            email_image_request.append(
-                {"input": input_data, "file_name": file_name, "file_extension": file_extension, "category": category})
+            try:
+                input_data = result["filePath"]
+                file_extension = result["fileExtension"]
+                result_file_name = result["fileName"]
 
-        email_request = EmailImageRequest(data=email_image_request)
+                # Create classification request
+                classify_image_request_data = {
+                    "imagedata": [{
+                        "input_path": input_data,
+                        "file_name": result_file_name,
+                        "file_extension": file_extension
+                    }],
+                    "json_data": email_file
+                }
 
-        response = upload_email_images(email_request)
-        result=response["consolidated_metadata"]
-        subject = result["subject"]
-        full_email_text = result["full_email_text"]
-        combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
-        ingest_embedding(combined_text,response)
+                classify_image_request = EmailClassifyImageRequest.model_validate(
+                    classify_image_request_data
+                )
 
-        return response
+                # Classify via VLM
+                classify_via_llm = await classify_email_with_vision(classify_image_request)
+                category = classify_via_llm.classification
+                summary = classify_via_llm.summary
+                summaries.append(summary)
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail={"error": str(ve)})
+                # Prepare for metadata extraction
+                email_image_request.append({
+                    "input": input_data,
+                    "file_name": result_file_name,
+                    "file_extension": file_extension,
+                    "category": category
+                })
 
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail={"error": "Invalid response format from the LLM"})
+            except Exception as e:
+                logger.error("Error processing result item: %s", str(e))
+                continue
+
+        # Step 5: Extract metadata
+        if email_image_request:
+            email_request = EmailImageRequest(data=email_image_request)
+            response = await extract_metadata_from_images(email_request)
+
+            # Step 6: Ingest embeddings
+            for result in response["results"]:
+                if "extracted_metadata" in result:
+                    try:
+                        subject = result["extracted_metadata"].get("subject", "")
+                        full_email_text = result["extracted_metadata"].get("full_email_text", "")
+                        combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary: {' '.join(summaries)}"
+
+                        await ingest_embeddings(combined_text, response)
+
+                    except Exception as e:
+                        logger.error("Error ingesting embeddings for result: %s", str(e))
+                        continue
+
+            logger.info("Comprehensive email processing completed successfully")
+            return response
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No valid results from paper itemization"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error in comprehensive email processing: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Comprehensive processing failed: {str(e)}"
+        )
+
+
+@app.post("/api/query-input", tags=["Search & Query"])
+async def process_user_query(user_query: str = Body(...), top_k: int = Body(10)):
+    """
+    Process user query using semantic search and return relevant results.
+
+    Args:
+        user_query (str): The user's search query
+        top_k (int): Number of top results to return (default: 10)
+
+    Returns:
+        str: AI-generated response based on semantic search results
+
+    Raises:
+        HTTPException: If query processing fails
+    """
+    try:
+        if not user_query.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query cannot be empty."
+            )
+
+        if top_k <= 0 or top_k > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="top_k must be between 1 and 100."
+            )
+
+        # Initialize query processing components
+        user_agent = UserQueryAgent()
+        embedder = Embedder(app.state.db_engine, app.state.db_session)
+
+        # Step 1: Query decomposition
+        decomposed_query = user_agent.query_decomposition(user_query)
+        logger.info("Query decomposed successfully")
+
+        # Step 2: Generate query embedding
+        query_embedding = await embedder.embed_text(decomposed_query)
+
+        # Step 3: Semantic search
+        semantic_results = embedder.semantic_search(query_embedding, top_k=top_k * 3)
+
+        if not semantic_results:
+            return {
+                "query": user_query,
+                "response": "No relevant results found for your query.",
+                "results_count": 0
+            }
+
+        # Step 4: Re-rank results using cross-encoder
+        candidate_texts = [text for _, text in semantic_results]
+        reranked_results = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
+
+        # Step 5: Format results for context
+        formatted_context = embedder.format_reranked_results(reranked_results)
+
+        # Step 6: Generate final response
+        final_response = await embedder.answer_query(user_query, formatted_context)
+
+        logger.info("Query processed successfully with %d results", len(semantic_results))
+
+        return {
+            "query": user_query,
+            "response": final_response,
+            "results_count": len(semantic_results),
+            "top_k_used": top_k
+        }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
+        logger.error("Error processing user query '%s': %s", user_query, str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process query: {str(e)}"
+        )
 
 
-@app.post("/api/query-input")
-async def user_query(user_query: str, top_k: int=10):
-    user = UserQueryAgent()
-    result = user.query_decomposition(user_query)
+# Global exception handler for unhandled exceptions
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """
+    Global exception handler to catch and log unhandled exceptions.
 
-    embedder = Embedder(app.state.db_engine, app.state.db_session)
-    query_embedding_result = embedder.embed_text(result)
-    semantic_result = embedder.semantic_search(query_embedding_result, top_k=top_k*3)
+    Args:
+        request: The FastAPI request object
+        exc: The exception that was raised
 
-    candidate_texts = [text for _, text in semantic_result]
-    reranked = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
+    Returns:
+        JSONResponse: Error response with details
+    """
+    logger.error("Unhandled exception in %s %s: %s",
+                request.method, request.url.path, str(exc), exc_info=True)
 
-    formatted_context = embedder.format_reranked_results(reranked)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error occurred",
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
 
-    final_response = embedder.answer_query(user_query, formatted_context)
 
-    return final_response
+# Custom exception handlers
+@app.exception_handler(DatabaseError)
+async def database_exception_handler(request, exc: DatabaseError):
+    """Handle database-related exceptions."""
+    logger.error("Database error in %s %s: %s",
+                request.method, request.url.path, str(exc))
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Database service unavailable",
+            "error_type": "DatabaseError"
+        }
+    )
+
+
+@app.exception_handler(FileProcessingError)
+async def file_processing_exception_handler(request, exc: FileProcessingError):
+    """Handle file processing exceptions."""
+    logger.error("File processing error in %s %s: %s",
+                request.method, request.url.path, str(exc))
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "File processing failed",
+            "error_type": "FileProcessingError"
+        }
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request, exc: ValidationError):
+    """Handle validation exceptions."""
+    logger.error("Validation error in %s %s: %s",
+                request.method, request.url.path, str(exc))
+
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "detail": "Validation failed",
+            "error_type": "ValidationError"
+        }
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
