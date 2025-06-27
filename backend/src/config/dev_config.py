@@ -34,4 +34,4 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME ="text-embedding-3-small"
 DEFAULT_IMAGE_FORMAT = ".jpg"
 EMAIL_TO_PDF_PATH = "/data"
 
-BASE_PATH = "/data"
+BASE_PATH = "/home/dinesh.krishna@zucisystems.com/workspace/data/"

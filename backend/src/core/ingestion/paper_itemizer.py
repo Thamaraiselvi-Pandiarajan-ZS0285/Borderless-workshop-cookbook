@@ -111,6 +111,7 @@ class PaperItemizer:
         logger.info("Executing complete paper itemization process.")
 
         try:
+            self.pdf_file_path = self.do_base64_to_pdf_conversion()
             self.file_paths = paper_itemizer(self.pdf_file_path, self.file_name, self.extension)
             logger.info("Image generation completed. Starting encoding.")
             return self.do_encoder()
