@@ -2,7 +2,6 @@ import json
 
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
-from autogen_agentchat.ui import Console
 from autogen_agentchat.agents import UserProxyAgent
 
 
@@ -86,7 +85,7 @@ text_mention_termination = TextMentionTermination("TERMINATE")
 max_messages_termination = MaxMessageTermination(max_messages=5)
 termination = text_mention_termination | max_messages_termination
 
-selector_prompt= selector_prompt = """
+selector_prompt = """
 You are a selector agent responsible for managing an email processing pipeline.
 
 There are the following agents in the pipeline, and they must act in this strict order:

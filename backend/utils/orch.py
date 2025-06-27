@@ -16,6 +16,10 @@ model_client = AzureOpenAIChatCompletionClient(
             azure_ad_token=AZURE_OPENAI_API_KEY,
             azure_deployment=AZURE_OPENAI_DEPLOYMENT_NAME
         )
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+
+
 
 email_pipeline = EmailProcessingPipeline()
 
