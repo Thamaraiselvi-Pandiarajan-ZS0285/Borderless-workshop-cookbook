@@ -23,8 +23,8 @@ class SummarizationAgent:
         Initializes the summarization agent with the OpenAI client and base agent.
         """
         try:
-            self.client = OpenAiClient().open_ai_chat_completion_client
-            self.base_agent = BaseAgent(self.client)
+            self.client = OpenAiClient()
+            self.base_agent = BaseAgent(self.client.open_ai_chat_completion_client)
             logger.info("SummarizationAgent initialized successfully.")
         except Exception as e:
             logger.exception("Failed to initialize SummarizationAgent.")

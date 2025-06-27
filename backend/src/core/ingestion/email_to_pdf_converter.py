@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Dict, Any
 from abc import ABC, abstractmethod
-from jinja2 import Environment, PackageLoader, Template
+from jinja2 import Environment, FileSystemLoader, Template
 import pdfkit
 
 logger = logging.getLogger(__name__)
@@ -18,19 +18,14 @@ class EmailConverter(ABC):
 class HTMLEmailToPDFConverter(EmailConverter):
     def __init__(
             self,
-            package_name: str = "backend",
-            template_dir: str = "utils/templates",
+            template_dir: str = os.path.join(os.path.dirname(__file__), "../../utils/templates"),
             template_name: str = "EmailToPdfHtml_template.html"
     ) -> None:
-        """
-        Initialize the Jinja2 environment and load the HTML template.
-        """
         try:
-            self.env: Environment = Environment(
-                loader=PackageLoader(package_name, template_dir)
-            )
+            template_dir = os.path.abspath(template_dir)
+            self.env: Environment = Environment(loader=FileSystemLoader(template_dir))
             self.template: Template = self.env.get_template(template_name)
-            logger.info("Email to PDF template loaded successfully.")
+            logger.info(f"Template loaded from: {template_dir}")
         except Exception as e:
             logger.exception("Failed to initialize Jinja2 environment or load template.")
             raise RuntimeError("Template loading failed") from e

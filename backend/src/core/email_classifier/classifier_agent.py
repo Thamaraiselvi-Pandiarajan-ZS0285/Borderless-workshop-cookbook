@@ -18,9 +18,8 @@ logger = logging.getLogger(__name__)
 
 class EmailClassifierProcessor:
     def __init__(self):
-        client_instance = OpenAiClient()
-        self.client = client_instance.initiate_open_ai_client()
-        self.base_agent = BaseAgent(self.client)
+        self.client = OpenAiClient()
+        self.base_agent = BaseAgent(self.client.open_ai_chat_completion_client)
         self.model_name = AZURE_OPENAI_DEPLOYMENT_NAME
         self.max_input_tokens = MAX_INPUT_TOKEN
 
