@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any
 from abc import ABC, abstractmethod
 
+from debian.debtags import output
 from jinja2 import Environment, PackageLoader, Template
 import pdfkit
 
@@ -38,7 +39,7 @@ class HTMLEmailToPDFConverter(EmailConverter):
             logger.exception("Failed to initialize Jinja2 environment or load template.")
             raise RuntimeError("Template loading failed") from e
 
-    def convert_to_pdf(self, email_data: Dict[str, Any], output_path: str) -> None:
+    def convert_to_pdf(self, email_data: Dict[str, Any], output_path: str) -> str:
         """
         Convert structured email data into a PDF file.
 
@@ -65,7 +66,7 @@ class HTMLEmailToPDFConverter(EmailConverter):
 
             pdfkit.from_string(html, output_path)
             logger.info(f"✅ PDF successfully saved at: {os.path.abspath(output_path)}")
-
+            return output_path
         except AssertionError as ae:
             logger.error(f"Type assertion failed: {ae}")
             raise ValueError(f"Invalid input: {ae}") from ae

@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class PaperItemizer:
-    def __init__(self, input: str, file_name: str, extension: str):
+    def __init__(self, input: str, file_name: str, extension: str,pdf_file_path:str):
         self.input = input
         self.file_name = file_name
         self.extension = extension
-        self.pdf_file_path = None
+        self.pdf_file_path = pdf_file_path
         self.file_paths = []
 
     def do_base64_to_pdf_conversion(self) -> str:
@@ -97,6 +97,5 @@ class PaperItemizer:
     def do_paper_itemizer(self) -> list:
         """End-to-end pipeline: base64 PDF -> images -> base64 images."""
         logger.info("Executing complete paper itemization process.")
-        self.do_base64_to_pdf_conversion()
         self.paper_itemizer()
         return self.do_encoder()

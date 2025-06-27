@@ -1,7 +1,8 @@
-import json
 import logging
-from openai import AzureOpenAI
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
+from backend.app.core.base_agent import BaseAgent
 from backend.config.dev_config import *
 from backend.prompts.decomposition_prompt import SEMANTIC_DECOMPOSITION_PROMPT
 
@@ -9,30 +10,13 @@ logger = logging.getLogger(__name__)
 
 class UserQueryAgent:
     def __init__(self) -> None:
-        try:
-            self.client = AzureOpenAI(
-                api_key=AZURE_OPENAI_API_KEY,
-                azure_endpoint=AZURE_OPENAI_ENDPOINT,
-                api_version=AZURE_OPENAI_API_VERSION
-            )
-            self.model = AZURE_OPENAI_DEPLOYMENT_NAME
-            logger.info("✅ Azure OpenAI client initialized successfully.")
-        except Exception as e:
-            logger.exception("❌ Failed to initialize Azure OpenAI client.")
-            raise RuntimeError(f"Initialization Failed: {e}") from e
+       self.base_agent=BaseAgent()
+       self.query_decomposition_agent = self.base_agent.create_agent("QUERY_DECOMPOSITION_AGENT",SEMANTIC_DECOMPOSITION_PROMPT)
 
-    def query_decomposition(self, user_query: str) -> str:
+    async def query_decomposition(self, user_query: str) -> str:
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": SEMANTIC_DECOMPOSITION_PROMPT},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0
-            )
-            response = response.choices[0].message.content
-            return response
-
+            result = await self.query_decomposition_agent.run(task=user_query)
+            return result.messages[-1].content
         except Exception as e:
+            logger.exception("Failed to decompose query.")
             raise RuntimeError(f"Query Decomposition failed: {e}")

@@ -17,7 +17,6 @@ from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.embedder import Embedder
 # from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
-from backend.app.core.metadata_consolidator import MetadataConsolidatorAgent
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
@@ -268,7 +267,7 @@ async def convert_email_to_pdf(email_file: UploadFile = File(...)) -> FileRespon
         raise HTTPException(status_code=500, detail="Error processing email: " + str(e))
 
 @app.post("/api/classify_email")
-def do_classify(email: EmailClassificationRequest):
+async def do_classify(email: EmailClassificationRequest):
 
     try:
         processor = EmailClassifierProcessor()
@@ -294,15 +293,15 @@ def do_classify(email: EmailClassificationRequest):
 
             # Step 4: Generate final summary from all page summaries
             combined_summaries_text = "\n\n".join(page_summaries)
-            attachment_summary = summarizer.summarize_text(combined_summaries_text)
+            attachment_summary = await summarizer.summarize_text(combined_summaries_text)
 
         # Step 5: Append final summary to the body
         full_body += "Attachment Summary\n\n" + attachment_summary
         # Step 6: Process classification
-        email_classification = processor.process_email(email.subject, full_body)
+        email_classification = await processor.process_email(email.subject, full_body)
 
         for label, variant in TASK_VARIANTS.items():
-            summary_response = summarizer.summarize_text(full_body, variant)
+            summary_response =await summarizer.summarize_text(full_body, variant)
             email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
 
         return build_email_classifier_response(email,email_classification,email_and_attachment_summary)
@@ -316,7 +315,7 @@ def do_classify(email: EmailClassificationRequest):
 
 
 @app.post("/api/classify_email_vlm")
-def do_classify_via_vlm(request: EmailClassifyImageRequest):
+async def do_classify_via_vlm(request: EmailClassifyImageRequest):
     try:
         classifier = EmailClassifierProcessor()
         summarizer = SummarizationAgent()
@@ -336,12 +335,12 @@ def do_classify_via_vlm(request: EmailClassifyImageRequest):
             # Step 3: Summarize each page individually
             page_summaries = []
             for idx, page in enumerate(pages):
-                summary = summarizer.summarize_text(page)
+                summary = await summarizer.summarize_text(page)
                 page_summaries.append(f"Page {idx + 1} Summary:\n{summary}")
 
             # Step 4: Generate final summary from all page summaries
             combined_summaries_text = "\n\n".join(page_summaries)
-            attachment_summary = summarizer.summarize_text(combined_summaries_text)
+            attachment_summary = await summarizer.summarize_text(combined_summaries_text)
 
         # Step 5: Append final summary to the body
         full_email_content += "Attachment Summary\n\n" + attachment_summary
@@ -357,12 +356,12 @@ def do_classify_via_vlm(request: EmailClassifyImageRequest):
                     if not item.input_path.startswith("data:image") and len(item.input_path) < 100:
                         raise ValueError("Invalid base64 input or unreadable image path.")
                     base64_image = item.input_path
-                extracted_text = classifier.classify_via_vlm(base64_image)
+                extracted_text = await classifier.classify_via_vlm(base64_image)
                 extracted_texts.append(extracted_text)
             except Exception as e:
                 logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
         for label, variant in TASK_VARIANTS.items():
-            summary_response = summarizer.summarize_text(full_email_content, variant)
+            summary_response =await summarizer.summarize_text(full_email_content, variant)
             email_and_attachment_summary += f"{label}:\n{summary_response}\n\n"
         return email_classify_response_via_vlm(request,extracted_texts,email_and_attachment_summary)
 
@@ -371,7 +370,7 @@ def do_classify_via_vlm(request: EmailClassifyImageRequest):
 
 
 @app.post("/api/extraction/metadata_extractor")
-def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
+async def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     """
     Accepts a list of email image inputs (either file path or base64 string),
     extracts metadata using OCR and LLM, and returns the result per file.
@@ -385,19 +384,6 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
     results = []
     ocr_agent = EmailOCRAgent()
     validator_agent = MetadataValidatorAgent()
-    consolidator_agent = MetadataConsolidatorAgent()
-
-    extracted_jsons = []
-    errors = []
-    if request.data[0].category.lower() in "rfp":
-        email_category="rfp"
-    elif request.data[0].category.lower() in "bid-win":
-        email_category="bid-win"
-    elif request.data[0].category.lower() in "rejection":
-        email_category="rejection"
-    else:
-        return {"error": "Human in the loop needed"}
-
 
     for item in request.data:
         try:
@@ -409,36 +395,30 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
                 if not item.input.startswith("data:image") and len(item.input) < 100:
                     raise ValueError("Invalid base64 input or unreadable image path.")
                 base64_image = item.input
-
-            # OCR extraction
-            extracted_text = ocr_agent.extract_text_from_base64(base64_image, email_category)
+            extracted_text = await ocr_agent.extract_text_from_base64(base64_image, item.category)
             cleaned_json_string = re.sub(r"^```json\s*|\s*```$", "", extracted_text.strip())
+            validation_result = validator_agent.validate_metadata(cleaned_json_string, item.category)
+            try:
+                parsed_metadata = json.loads(cleaned_json_string)
+                results.append({
+                    "file_name": item.file_name,
+                    "file_extension": item.file_extension,
+                    "extracted_metadata": parsed_metadata,
+                    "validation_result": validation_result
+                })
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse JSON from extracted text: {e}")
 
-            # Validate each extracted metadata
-            validation_result = validator_agent.validate_metadata(cleaned_json_string, email_category)
-            extracted_jsons.append(cleaned_json_string)
 
         except Exception as e:
             logger.error(f"Failed to extract metadata for {item.file_name}: {e}", exc_info=True)
-            errors.append({
+            results.append({
                 "file_name": item.file_name,
                 "file_extension": item.file_extension,
                 "error": str(e)
             })
 
-    if errors:
-        return {"errors": errors}
-
-    # Consolidate all validated JSON strings into one final metadata
-    try:
-        consolidated_metadata = consolidator_agent.consolidate(extracted_jsons, category=email_category)
-        return {
-            "consolidated_metadata": consolidated_metadata
-        }
-    except Exception as e:
-        logger.error(f"Metadata consolidation failed: {e}", exc_info=True)
-        return {"error": f"Consolidation failed: {str(e)}"}
-
+    return {"results": results}
 
 #
 # @app.post("/query")
@@ -458,13 +438,13 @@ def upload_email_images(request: EmailImageRequest) -> Dict[str, Any]:
 #
 
 @app.post("/ingest")
-def ingest_embedding(email_content:str, response_json:Dict[str,list]):
+async def ingest_embedding(email_content:str, response_json:Dict[str,list]):
 
     embedder = Embedder(app.state.db_engine, app.state.db_session)
-    minified = embedder.minify_json(response_json)
+    minified =await embedder.minify_json(response_json)
     if not minified:
         raise HTTPException(status_code=400, detail="Invalid or empty JSON for embedding.")
-    json_embedding = embedder.embed_text(minified)
+    json_embedding = await embedder.embed_text(minified)
     embedder.ingest_email_metadata_json( "sender@yahoo.com",minified,json_embedding)
 
     content_embedding = embedder.embed_text(email_content)
@@ -480,27 +460,31 @@ async def test(email_file: EmailClassificationRequest):
         if not isinstance(email_data, dict):
             raise ValueError("The uploaded JSON must be an object.")
 
+
+
         file_utils = FilePathUtils(file=None, temp_dir=None)
         output_dir = file_utils.file_dir()
         os.makedirs(output_dir, exist_ok=True)
         file_name = str(uuid.uuid4())
         pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
+
         # email to pdf
         pdf_converter = HTMLEmailToPDFConverter()
-        pdf_converter.convert_to_pdf(email_data, pdf_path)
+        pdf_saved_path= pdf_converter.convert_to_pdf(email_data, pdf_path)
+
         # encode
         base64_encoder = FileToBase64(pdf_path)
         encoded_data = base64_encoder.do_base64_encoding_by_file_path()
+
         # paper-itemizer
         paper_itemizer_object = PaperItemizer(
             input=encoded_data,
             file_name=file_name,
-            extension=DEFAULT_IMAGE_FORMAT
+            extension=DEFAULT_IMAGE_FORMAT,
+            pdf_file_path=pdf_saved_path
         )
 
         results = paper_itemizer_object.do_paper_itemizer()
-        # classification
-        # classification_result = do_classify(email_file)
 
         email_image_request = []
         summaries = []
@@ -512,8 +496,8 @@ async def test(email_file: EmailClassificationRequest):
             classify_image_request_data["imagedata"].append(
                 {"input_path": input_data, "file_name": file_name, "file_extension": file_extension})
             classify_image_request = EmailClassifyImageRequest.model_validate(classify_image_request_data)
-            classify_via_llm = do_classify_via_vlm(classify_image_request)
-            category = classify_via_llm.classification[0]
+            classify_via_llm = await do_classify_via_vlm(classify_image_request)
+            category = classify_via_llm.classification
             summary = classify_via_llm.summary
             summaries.append(summary)
             email_image_request.append(
@@ -521,12 +505,13 @@ async def test(email_file: EmailClassificationRequest):
 
         email_request = EmailImageRequest(data=email_image_request)
 
-        response = upload_email_images(email_request)
-        result=response["consolidated_metadata"]
-        subject = result["subject"]
-        full_email_text = result["full_email_text"]
-        combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
-        ingest_embedding(combined_text,response)
+        response = await upload_email_images(email_request)
+
+        for result in response["results"]:
+            subject = result["extracted_metadata"]["subject"]
+            full_email_text = result["extracted_metadata"]["full_email_text"]
+            combined_text = f"Subject: {subject}\n\n{full_email_text}\nAttachment Summary:{summaries}"
+            await ingest_embedding(combined_text, response)
 
         return response
 
@@ -539,21 +524,20 @@ async def test(email_file: EmailClassificationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Internal server error", "details": str(e)})
 
-
 @app.post("/api/query-input")
 async def user_query(user_query: str, top_k: int=10):
     user = UserQueryAgent()
-    result = user.query_decomposition(user_query)
+    result =  user.query_decomposition(user_query)
 
     embedder = Embedder(app.state.db_engine, app.state.db_session)
     query_embedding_result = embedder.embed_text(result)
-    semantic_result = embedder.semantic_search(query_embedding_result, top_k=top_k*3)
+    semantic_result =  embedder.semantic_search(query_embedding_result, top_k=top_k*3)
 
     candidate_texts = [text for _, text in semantic_result]
     reranked = embedder.rerank_with_cross_encoder(user_query, candidate_texts)
 
     formatted_context = embedder.format_reranked_results(reranked)
 
-    final_response = embedder.answer_query(user_query, formatted_context)
+    final_response = await embedder.answer_query(user_query, formatted_context)
 
     return final_response

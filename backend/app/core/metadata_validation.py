@@ -1,31 +1,19 @@
 import json
-from openai import AzureOpenAI
-from backend.config.dev_config import *
+from backend.app.core.base_agent import BaseAgent
 from backend.prompts.meta_data_extraction import VALIDATION_PROMPT_TEMPLATE
 
 
 class MetadataValidatorAgent:
     def __init__(self):
-        self.client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=AZURE_OPENAI_API_VERSION
-        )
-        self.model = AZURE_OPENAI_DEPLOYMENT_NAME
+        self.base_agent=BaseAgent()
 
-    def validate_metadata(self, metadata: dict, category: str) -> dict:
+
+async def validate_metadata(self, metadata: dict, category: str) -> dict:
         metadata_json = json.dumps(metadata, indent=2)
         prompt = VALIDATION_PROMPT_TEMPLATE.format(category=category, metadata_json=metadata_json)
-
+        self.validator_agent = self.base_agent.create_agent("VALIDATOR_AGENT", "You are a metadata validation assistant.")
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a metadata validation assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0
-            )
+            response = await self.validator_agent.run(task=prompt)
             validation_response = response.choices[0].message.content
 
             # Parse JSON output from the model

@@ -1,30 +1,32 @@
-import os
 import json
-
 import numpy as np
 from openai import AzureOpenAI
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.app.core.base_agent import BaseAgent
 from backend.config.dev_config import *
 from backend.models.all_db_models import  EmailContentEmbedding, MetadataExtractionJsonEmbedding
-from dotenv import load_dotenv
 from sentence_transformers import CrossEncoder
 
 from backend.prompts.user_query_prompt import USER_QUERY_SYSTEM_PROMPT
 
-load_dotenv()
 
 
 class Embedder:
     def __init__(self, db_engine:Engine,db_session:sessionmaker):
-        self.client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_OPENAI_API_VERSION,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-        )
-        self.db_engine = db_engine
-        self.db_session = db_session
+       self.base_agent=BaseAgent()
+       self.db_engine = db_engine
+       self.db_session = db_session
+
+       self.client = AzureOpenAI(
+           api_key=AZURE_OPENAI_API_KEY,
+           api_version=AZURE_OPENAI_API_VERSION,
+           azure_endpoint=AZURE_OPENAI_ENDPOINT,
+       )
+
+       self.user_query_agent = self.base_agent.create_agent(name=USER_QUERY_AGENT_NAME,prompt= USER_QUERY_SYSTEM_PROMPT)
+
 
     def embed_text(self, text):
         if not isinstance(text, str):
@@ -95,18 +97,12 @@ class Embedder:
     def format_reranked_results(self, reranked):
         return "\n\n".join([f"Context {i + 1}:\n{text}" for i, (_, text) in enumerate(reranked)])
 
-    def answer_query(self, query_input, formatted_reranked_results):
+    async def answer_query(self, query_input, formatted_reranked_results):
         user_prompt = (
-        f"User Query: {query_input}\n\n"
-        f"Top Matching Content:\n{formatted_reranked_results}"
-    )
-        response = self.client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT_NAME,
-            messages=[
-                {"role": "system", "content":  USER_QUERY_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0
+            f"User Query: {query_input}\n\n"
+            f"Top Matching Content:\n{formatted_reranked_results}"
         )
-        response = response.choices[0].message.content
-        return response
+
+        response = await self.user_query_agent.run(task=user_prompt)
+        content = response.choices[0].message.content.strip()
+        return content

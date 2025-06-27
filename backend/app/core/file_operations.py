@@ -2,6 +2,8 @@ import base64
 import os
 import logging
 
+from pdf2image import convert_from_path
+
 from backend.utils.base_64_operations import Base64Conversion
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,17 @@ class FileToBase64(Base64Conversion):
             if not os.path.isfile(self.input_data):
                 raise FileNotFoundError(f"File not found: {self.input_data}")
 
+            if self.input_data.lower().endswith(".pdf"):
+                images = convert_from_path(self.input_data, first_page=1, last_page=1)
+                if not images:
+                    raise RuntimeError("Failed to convert PDF to image.")
+
+                image_path = f"{self.input_data}_page1.jpeg"
+                images[0].save(image_path, "JPEG")
+
+                # Update input_data to point to the new image
+                self.input_data = image_path
+
             with open(self.input_data, "rb") as file:
                 encoded_data = base64.b64encode(file.read()).decode("utf-8")
                 logger.info(f"File encoded successfully: {self.input_data}")
@@ -24,6 +37,7 @@ class FileToBase64(Base64Conversion):
         except Exception as e:
             logger.error(f"Error encoding file to base64: {e}", exc_info=True)
             raise RuntimeError("Failed to encode file to base64.") from e
+
 
     def do_base64_decoding(self) -> bytes:
         # You can decode the base64 string back into bytes here

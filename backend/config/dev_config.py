@@ -12,6 +12,16 @@ EMAIL_CLASSIFIER_AGENT_NAME="EmailClassifierAgent"
 VALIDATOR_AGENT_NAME = "ValidatorAgent"
 CONFIDENCE_AGENT_NAME ="ConfidenceAgent"
 TIGGER_REASON_AGENT_NAME ="TriggerReasonAgent"
+VLM_CLASSIFICATION_AGENT_NAME="ClassificationAgent"
+SUMMARIZATION_AGENT_NAME="SummarizationAgent"
+USER_QUERY_AGENT_NAME="UserQueryAgent"
+MODEL_INFO={
+                "family": "gpt-4",
+                "vision": True,
+                "structured_output": False,
+                "function_calling": False,
+                "json_output": False
+            }
 
 
 # AZURE_OPENAI_API_KEY="u6E6J0Tako0ANrOabdwG8UMhO8RgVXGGmqKiXJtDkoCby2chFGLQJQQJ99BAACHYHv6XJ3w3AAABACOGQqRb"
@@ -29,7 +39,6 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT ="text-embedding-3-small"
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME ="text-embedding-3-small"
 
 # https://bap-openai.openai.azure.com/openai/deployments/gpt-41-mini/chat/completions?api-version=2025-01-01-preview
-SUMMARIZATION_AGENT_NAME="SummarizationAgent"
 # AZURE_OPENAI_API_KEY=os.getenv("AZURE_OPENAI_API_KEY")
 # AZURE_OPENAI_ENDPOINT= os.getenv("AZURE_OPENAI_ENDPOINT")
 # AZURE_OPENAI_API_VERSION=os.getenv("AZURE_OPENAI_API_VERSION")
