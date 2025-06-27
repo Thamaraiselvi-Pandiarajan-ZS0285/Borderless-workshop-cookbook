@@ -1,4 +1,4 @@
-from backend.config.dev_config import *
+from backend.src.config.dev_config import *
 
 class LlmConfig():
     def __init__(self):

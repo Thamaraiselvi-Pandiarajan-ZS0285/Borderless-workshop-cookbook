@@ -1,10 +1,9 @@
 import logging
 
-from autogen.agentchat import AssistantAgent
 from typing import Optional
 
 from backend.app.core.base_agent import BaseAgent
-from backend.prompts.meta_data_extraction import RFP_EXTRACTION_PROMPT,BID_WIN_EXTRACTION_PROMPT, BID_REJECTION_EXTRACTION_PROMPT
+from backend.src.prompts import RFP_EXTRACTION_PROMPT,BID_WIN_EXTRACTION_PROMPT, BID_REJECTION_EXTRACTION_PROMPT
 
 
 logger = logging.getLogger(__name__)

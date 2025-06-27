@@ -2,7 +2,7 @@ from sqlalchemy import Engine, MetaData, inspect
 from sqlalchemy.sql.ddl import CreateSchema
 import logging
 
-from backend.models.metadata_extraction_json_embedding import Base
+from backend.src.db.models.metadata_extraction_json_embedding import Base
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

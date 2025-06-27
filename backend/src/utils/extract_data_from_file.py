@@ -1,13 +1,13 @@
 import base64
 import io
-from typing import List, Optional
+from typing import List
 
 import pdfplumber
 from docx import Document
 from bs4 import BeautifulSoup
 from email import message_from_bytes, policy
 
-from backend.app.request_handler.email_request import Attachment
+from backend.src.controller.request_handler.email_request import Attachment
 
 
 def split_into_pages(content: str, max_chars: int = 2000) -> List[str]:

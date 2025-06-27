@@ -1,7 +1,7 @@
 from pdf2image import convert_from_path
 import os
 from abc import ABC, abstractmethod
-from backend.utils.file_utils import FilePathUtils
+from backend.src.utils.file_utils import FilePathUtils
 
 class PDFToImageConverter(ABC):
     @abstractmethod

@@ -1,6 +1,5 @@
 from backend.app.core.base_agent import BaseAgent
-from backend.config.dev_config import *
-from backend.prompts.summarization_prompt import SUMMARIZATION_PROMPT
+from backend.src.prompts import SUMMARIZATION_PROMPT
 
 
 

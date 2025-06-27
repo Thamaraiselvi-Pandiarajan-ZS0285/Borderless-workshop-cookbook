@@ -1,10 +1,7 @@
 import logging
-from autogen_agentchat.agents import AssistantAgent
-from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
 from backend.app.core.base_agent import BaseAgent
-from backend.config.dev_config import *
-from backend.prompts.decomposition_prompt import SEMANTIC_DECOMPOSITION_PROMPT
+from backend.src.prompts import SEMANTIC_DECOMPOSITION_PROMPT
 
 logger = logging.getLogger(__name__)
 

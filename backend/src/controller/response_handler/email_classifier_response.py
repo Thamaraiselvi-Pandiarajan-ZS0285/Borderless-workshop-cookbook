@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
 
-from backend.app.request_handler.email_request import *
-
 
 class EmailClassifierResponse(BaseModel):
     subject: str

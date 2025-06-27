@@ -1,14 +1,11 @@
 import json
-from typing import Optional
 import tiktoken
 import logging
 from openai import AzureOpenAI
 from backend.app.core.base_agent import BaseAgent
-from backend.config.dev_config import *
-from backend.prompts.confidence_prompt import CONFIDENCE_PROMPT
-from backend.prompts.validator_prompt import VALIDATION_PROMPT
-from backend.prompts.emailclassifer_prompt import *
-from backend.prompts.trigger_reason_prompt import TRIGGER_REASON_PROMPT
+from backend.src.prompts import CONFIDENCE_PROMPT
+from backend.src.prompts import VALIDATION_PROMPT
+from backend.src.prompts.trigger_reason_prompt import TRIGGER_REASON_PROMPT
 
 logger = logging.getLogger(__name__)
 

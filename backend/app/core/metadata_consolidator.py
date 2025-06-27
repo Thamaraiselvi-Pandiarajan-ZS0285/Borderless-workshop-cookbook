@@ -2,8 +2,7 @@ import json
 import re
 from typing import List
 from openai import AzureOpenAI
-from backend.config.dev_config import *
-from backend.prompts.meta_data_extraction import CONSOLIDATION_PROMPT
+from backend.src.prompts import CONSOLIDATION_PROMPT
 
 
 

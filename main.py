@@ -20,29 +20,25 @@ from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
 from backend.app.core.ocr_agent import EmailOCRAgent
 from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
+from backend.src.controller.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
 from backend.app.core.user_query_handler import UserQueryAgent
 
-from backend.app.request_handler.metadata_extraction import EmailImageRequest
-from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
-from backend.app.response_handler.email_classifier_response import build_email_classifier_response, \
+from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
+from backend.src.controller.request_handler import PaperItemizerRequest
+from backend.src.controller.response_handler import build_email_classifier_response, \
     email_classify_response_via_vlm
-from backend.app.response_handler.file_operations_reponse import build_encode_file_response
-from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
-from backend.config.db_config import *
-from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
-from backend.db.db_helper.db_Initializer import DbInitializer
-from backend.db.db_helper.db_utils import Dbutils
-from backend.models.metadata_extraction_json_embedding import Base
-from backend.prompts.summarization_prompt import TASK_VARIANTS
-from backend.utils.base_64_operations import Base64Utils
+from backend.src.controller.response_handler.file_operations_reponse import build_encode_file_response
+from backend.src.controller.response_handler import build_paper_itemizer_response
+from backend.src.config import DEFAULT_IMAGE_FORMAT
+from backend.src.db.db_helper.db_Initializer import DbInitializer
+from backend.src.db.db_helper.db_utils import Dbutils
+from backend.src.db.models.metadata_extraction_json_embedding import Base
+from backend.src.prompts import TASK_VARIANTS
+from backend.src.utils.base_64_operations import Base64Utils
 from backend.app.core.summarization_agent import SummarizationAgent
-from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
-from backend.utils.file_utils import FilePathUtils
+from backend.src.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
+from backend.src.utils.file_utils import FilePathUtils
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
-
-from sqlalchemy.engine.base import Engine
-from sqlalchemy.orm import sessionmaker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ import logging
 
 from pdf2image import convert_from_path
 
-from backend.utils.base_64_operations import Base64Conversion
+from backend.src.utils.base_64_operations import Base64Conversion
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

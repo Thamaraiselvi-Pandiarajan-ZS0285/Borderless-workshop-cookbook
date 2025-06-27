@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine, Engine, select
+from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import URL
 
-from backend.config.db_config import POSTGRESQL_DRIVER_NAME
+from backend.src.config import POSTGRESQL_DRIVER_NAME
 
 
 class DbInitializer:

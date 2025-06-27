@@ -1,7 +1,7 @@
 import os
 import logging
 from fastapi import UploadFile
-from backend.utils.base_64_operations import Base64Conversion
+from backend.src.utils.base_64_operations import Base64Conversion
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

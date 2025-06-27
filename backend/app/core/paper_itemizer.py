@@ -6,9 +6,9 @@ import pdfplumber
 from fastapi import HTTPException
 
 from backend.app.core.file_operations import FileToBase64
-from backend.config.dev_config import IMAGE_RESOLUTION, IMAGE_FORMATE
-from backend.utils.base_64_operations import Base64Utils
-from backend.utils.file_utils import FilePathUtils
+from backend.src.config import IMAGE_RESOLUTION, IMAGE_FORMATE
+from backend.src.utils.base_64_operations import Base64Utils
+from backend.src.utils.file_utils import FilePathUtils
 
 # Logger configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

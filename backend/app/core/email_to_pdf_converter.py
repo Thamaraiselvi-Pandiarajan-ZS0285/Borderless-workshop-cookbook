@@ -7,8 +7,6 @@ from debian.debtags import output
 from jinja2 import Environment, PackageLoader, Template
 import pdfkit
 
-from backend.utils.file_utils import FilePathUtils
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 

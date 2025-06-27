@@ -1,6 +1,6 @@
 import json
 from backend.app.core.base_agent import BaseAgent
-from backend.prompts.meta_data_extraction import VALIDATION_PROMPT_TEMPLATE
+from backend.src.prompts import VALIDATION_PROMPT_TEMPLATE
 
 
 class MetadataValidatorAgent:

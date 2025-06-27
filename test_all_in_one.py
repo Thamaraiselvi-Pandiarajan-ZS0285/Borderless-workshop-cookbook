@@ -3,15 +3,13 @@ import os
 import uuid
 from http.client import HTTPException
 
-from pdf2image import convert_from_path
-
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.paper_itemizer import PaperItemizer
-from backend.app.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
-from backend.app.request_handler.metadata_extraction import EmailImageRequest
-from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
-from backend.utils.file_utils import FilePathUtils
+from backend.src.controller.request_handler.email_request import EmailClassificationRequest, EmailClassifyImageRequest
+from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
+from backend.src.config import DEFAULT_IMAGE_FORMAT
+from backend.src.utils.file_utils import FilePathUtils
 from main import app, do_classify_via_vlm, upload_email_images, ingest_embedding
 
 

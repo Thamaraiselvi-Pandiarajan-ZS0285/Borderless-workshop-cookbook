@@ -1,8 +1,6 @@
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
-from backend.config.dev_config import *
-
 
 class BaseAgent:
     def __init__(self):
