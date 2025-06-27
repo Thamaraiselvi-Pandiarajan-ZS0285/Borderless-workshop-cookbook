@@ -3,8 +3,8 @@ import logging
 from typing import Optional
 
 from backend.src.core.base_agents.base_agent import BaseAgent
-from backend.src.prompts import RFP_EXTRACTION_PROMPT,BID_WIN_EXTRACTION_PROMPT, BID_REJECTION_EXTRACTION_PROMPT
-
+from backend.src.prompts.meta_data_extraction import RFP_EXTRACTION_PROMPT, BID_WIN_EXTRACTION_PROMPT, \
+    BID_REJECTION_EXTRACTION_PROMPT
 
 logger = logging.getLogger(__name__)
 
