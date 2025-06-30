@@ -7,8 +7,6 @@ from sqlalchemy.orm.session import sessionmaker
 from backend.src.config.dev_config import USER_QUERY_AGENT_NAME
 from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.core.base_client.base_client import OpenAiClient
-from backend.src.core.embeding.embedder import Embedder
-from backend.src.core.retrival.user_query_handler import UserQueryAgent
 from backend.src.db.models.metadata_extraction_json_embedding import MetadataExtractionJsonEmbedding
 from backend.src.prompts.decomposition_prompt import SEMANTIC_DECOMPOSITION_PROMPT
 import numpy as np
