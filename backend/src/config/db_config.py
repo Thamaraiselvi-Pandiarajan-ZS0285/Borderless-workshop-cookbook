@@ -6,4 +6,4 @@ POSTGRESQL_DB_NAME = "bap_db"
 POSTGRESQL_PORT_NO = 5432
 POSTGRESQL_HOST = "bap-pgsqlfs-db.postgres.database.azure.com"
 
-SCHEMA_NAMES = ["EmailChunks", "Embeddings"]
+SCHEMA_NAMES = ["EmailChunks", "Embeddings", "ChatHistoryAndSessionManagement"]

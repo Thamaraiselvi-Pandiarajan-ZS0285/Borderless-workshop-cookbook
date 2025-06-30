@@ -33,6 +33,7 @@ from backend.src.config.db_config import (
     POSTGRESQL_USER_NAME, POSTGRESQL_PASSWORD, POSTGRESQL_PORT_NO, SCHEMA_NAMES
 )
 from backend.src.config.dev_config import BASE_PATH, DEFAULT_IMAGE_FORMAT
+from backend.src.controller.request_handler.chat_request import ChatRequest
 
 # Import request/response handlers
 from backend.src.controller.request_handler.email_request import (
@@ -48,6 +49,7 @@ from backend.src.controller.response_handler.paper_itemizer import build_paper_i
 
 # Import core processing modules
 from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
+from backend.src.core.chat.ChatOrchestrator import ChatOrchestrator
 from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
 from backend.src.core.email_classifier.summarization_agent import SummarizationAgent
 from backend.src.core.embeding.embedder import Embedder
@@ -900,6 +902,14 @@ async def process_user_query(user_query: str = Body(...), top_k: int = Body(10))
             detail=f"Failed to process query: {str(e)}"
         )
 
+@app.post("/api/chatbot", tags=["Chatbot & Session Management"])
+async def chat_with_bot(req: ChatRequest):
+    orchestrator = ChatOrchestrator(app.state.db_engine, app.state.db_session)
+    response =await orchestrator.process_user_query(
+        session_name = req.session_name,
+        user_input=req.user_input
+    )
+    return {"response": response}
 
 # Global exception handler for unhandled exceptions
 @app.exception_handler(Exception)
