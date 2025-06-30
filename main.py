@@ -49,7 +49,7 @@ from backend.src.controller.response_handler.paper_itemizer import build_paper_i
 # Import core processing modules
 from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
 from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
-from backend.src.core.email_classifier.summarization_agent import SummarizationAgent
+from backend.src.core.summarization.summarization_agent import SummarizationAgent
 from backend.src.core.embeding.embedder import Embedder
 from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
 from backend.src.core.ingestion.paper_itemizer import PaperItemizer
