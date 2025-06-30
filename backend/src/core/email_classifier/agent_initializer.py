@@ -37,12 +37,18 @@ class AgentInitialization:
             name=VLM_CLASSIFICATION_AGENT_NAME,
             prompt=CLASSIFICATION_PROMPT_VLM
         )
+        self.summarization_agent = self.base_agent.create_assistant_agent(
+            name="SUMMARIZATION_AGENT",
+            prompt="You are a helpful assistant that summarizes text"
+        )
 
-    @staticmethod
-    async def run_agent_task(agent, task: str, fallback_result=None, result_type=str):
+
+    async def run_agent_task(self,agent, task: str, fallback_result=None, result_type=str):
         try:
             result = await agent.run(task=task)
             content = list(result.messages)[-1].content
+            summary = await self.summarization_agent.run(task=content)
+            combined_result = f"{content}\n\n---\n**Summary:** {summary}"
             return result_type(content)
         except Exception as e:
             logger.exception(f"❌ Agent task failed: {agent.name}")
