@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, FileResponse
 
 
 from backend.app.core.classifier_agent import EmailClassifierProcessor
-from backend.app.core.email_processing_pipeline import EmailProcessingPipeline
+from backend.app.core.email_processing_pipelines.email_pipeline import EmailProcessingPipeline
 from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
 from backend.app.core.metadata_validation import MetadataValidatorAgent
