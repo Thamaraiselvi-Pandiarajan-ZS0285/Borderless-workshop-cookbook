@@ -2,10 +2,9 @@ from autogen_agentchat.agents import AssistantAgent
 
 
 from autogen_core.tools import FunctionTool
-
-from backend.app.core.email_processing_pipeline import EmailProcessingPipeline
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
+from backend.app.core.email_processing_pipelines.email_pipeline import EmailProcessingPipeline
 from backend.config.dev_config import AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, \
     AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_NAME
 

@@ -1,8 +1,9 @@
 import logging
 import os
 import json
+import re
 import uuid
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 from autogen_core import (
@@ -26,10 +27,23 @@ from autogen_core.models import (
 from autogen_core.tools import FunctionTool, Tool
 from pydantic import BaseModel
 
+from backend.app.core.classifier_agent import EmailClassifierProcessor
 from backend.app.core.email_to_pdf_converter import HTMLEmailToPDFConverter
+from backend.app.core.embedder import Embedder
 from backend.app.core.file_operations import FileToBase64
+from backend.app.core.metadata_consolidator import MetadataConsolidatorAgent
+from backend.app.core.metadata_validation import MetadataValidatorAgent
+from backend.app.core.ocr_agent import EmailOCRAgent
+from backend.app.core.paper_itemizer import PaperItemizer
+from backend.app.core.summarization_agent import SummarizationAgent
+from backend.app.request_handler.email_request import EmailClassifyImageRequest
+from backend.app.request_handler.metadata_extraction import EmailImageRequest
 from backend.app.request_handler.paper_itemizer import PaperItemizerRequest
+from backend.app.response_handler.email_classifier_response import email_classify_response_via_vlm
+from backend.app.response_handler.paper_itemizer import build_paper_itemizer_response
 from backend.config.dev_config import DEFAULT_IMAGE_FORMAT
+from backend.prompts.summarization_prompt import TASK_VARIANTS
+from backend.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 
 # ----------------------- Configure Logging -----------------------
 logging.basicConfig(
@@ -108,6 +122,62 @@ def do_encode_via_path(path:str, file_name:str):
         file_name=file_name,
         file_extension=DEFAULT_IMAGE_FORMAT)
     return paper_itemizer_object
+
+def do_paper_itemizer(data: Dict[str, Any]) -> Dict[str, Any]:
+    req = PaperItemizerRequest(**data)
+    result = PaperItemizer(input=req.input, file_name=req.file_name, extension=req.file_extension).do_paper_itemizer()
+    return build_paper_itemizer_response(result, 200, "Paper itemization successful.")
+
+def do_classify_via_vlm(data: Dict[str, Any]) -> Dict[str, Any]:
+    req = EmailClassifyImageRequest(**data)
+    classifier = EmailClassifierProcessor()
+    summarizer = SummarizationAgent()
+    extractor = AttachmentExtractor()
+    full = req.json_data.body
+    attach_summary = ""
+    if req.json_data.hasAttachments:
+        pages = split_into_pages(extractor.extract_many(req.json_data.attachments))
+        page_summaries = [f"Page {i+1} Summary:\n{summarizer.summarize_text(p)}" for i,p in enumerate(pages)]
+        attach_summary = summarizer.summarize_text("\n\n".join(page_summaries))
+        full += "\nAttachment Summary\n\n" + attach_summary
+    extracted = []
+    for item in req.imagedata:
+        base64_img = FileToBase64(item.input_path).do_base64_encoding_by_file_path() \
+            if os.path.exists(item.input_path) else item.input_path
+        extracted.append(classifier.classify_via_vlm(base64_img))
+    summary = "".join(f"{label}:\n{summarizer.summarize_text(full, variant)}\n\n" for label,variant in TASK_VARIANTS.items())
+    return email_classify_response_via_vlm(req, extracted, summary)
+
+def build_email_image_request(data: Dict[str, Any]) -> Dict[str, Any]:
+    resp = data["paper_itemizer_response"]
+    classification = data["classification_result"]
+    return {"data": [{"input": r["filePath"], "file_name": r["fileName"], "file_extension": r["fileExtension"], "category": classification["classification"]} for r in resp["results"]]}
+
+def upload_email_images(data: Dict[str, Any]) -> Dict[str, Any]:
+    req = EmailImageRequest(**data)
+    ocr = EmailOCRAgent()
+    val = MetadataValidatorAgent()
+    cons = MetadataConsolidatorAgent()
+    extracted = []; errors = []
+    for item in req.data:
+        try:
+            base64_img = FileToBase64(item.input).do_base64_encoding_by_file_path()
+            cleaned = re.sub(r"^```json\s*|\s*```$", "", ocr.extract_text_from_base64(base64_img, item.category).strip())
+            val.validate_metadata(cleaned, item.category)
+            extracted.append(cleaned)
+        except Exception as e:
+            errors.append({"file_name": item.file_name, "error": str(e)})
+    if errors:
+        return {"errors": errors}
+    return {"consolidated_metadata": cons.consolidate(extracted, category=req.data[0].category)}
+
+def ingest_all_embeddings(data: Dict[str, Any]) -> Dict[str, Any]:
+    resp = data["upload_response"]
+    summary = data["classification_summary"]
+    for r in resp.get("results", []):
+        text = f"Subject: {r['extracted_metadata']['subject']}\n\n{r['extracted_metadata']['full_email_text']}\nAttachment Summary:{summary}"
+        Embedder(None, None).ingest_email_for_content(text, text)
+    return {"status": "success"}
 
 class UserLogin(BaseModel):
     pass
@@ -270,13 +340,21 @@ class UserAgent(RoutedAgent):
         )
 
 convert_email_into_pdf = FunctionTool(convert_email_data_to_pdf, description="Convert the email data into pdf")
-encode_pdf = FunctionTool(
-    do_encode_via_path, description="Encode the pdf file"
-)
+encode_pdf = FunctionTool(do_encode_via_path, description="Encode the pdf file")
+paper_itemizer = FunctionTool(do_paper_itemizer, description="Processes and extracts content from paper.")
+classify_via_llm = FunctionTool(do_classify_via_vlm, description="Classifies email content using VLM.")
+email_image_request = FunctionTool(build_email_image_request, description="Builds image request for email.")
+extract_images = FunctionTool(upload_email_images, description="Uploads images extracted from email.")
+ingest_embeddings = FunctionTool(ingest_all_embeddings, description="Ingests embeddings from email content.")
 
 
 convert_email_agent_name = "ConvertEmailToPdf"
 encode_agent_topic_type = "EncodePdf"
+paper_itemizer_topic_type = "PaperItemizer"
+classify_via_llm_topic_type = "ClassifyViaLlm"
+email_image_request_topic_type = "EmailImageRequest"
+extract_images_topic_type = "ExtractImages"
+ingest_embeddings_topic_type = "IngestEmbeddings"
 triage_agent_topic_type = "TriageAgent"
 human_agent_topic_type = "HumanAgent"
 user_topic_type_ = "User"
@@ -285,14 +363,26 @@ user_topic_type_ = "User"
 def transfer_to_email_to_pdf() -> str:
     return convert_email_agent_name
 
-
 def transfer_to_encode_agent() -> str:
     return encode_agent_topic_type
 
+def transfer_to_paper_itemizer() -> str:
+    return paper_itemizer_topic_type
+
+def transfer_to_classify_via_llm() -> str:
+    return classify_via_llm_topic_type
+
+def transfer_to_email_image_request() -> str:
+    return email_image_request_topic_type
+
+def transfer_to_extract_images() -> str:
+    return extract_images_topic_type
+
+def transfer_to_ingest_embeddings() -> str:
+    return ingest_embeddings_topic_type
 
 def transfer_back_to_triage() -> str:
     return triage_agent_topic_type
-
 
 def escalate_to_human() -> str:
     return human_agent_topic_type
@@ -303,6 +393,21 @@ transfer_to_pdf_converstion_agent_tools = FunctionTool(
 )
 transfer_to_encode_agent_tool = FunctionTool(
     transfer_to_encode_agent, description="Use for encode files"
+)
+transfer_to_paper_itemizer_tool = FunctionTool(
+    transfer_to_paper_itemizer, description="Use for paper itemizer"
+)
+transfer_to_classify_via_llm_tool = FunctionTool(
+    transfer_to_classify_via_llm, description="Use for classification using llm"
+)
+transfer_to_email_image_request_tool = FunctionTool(
+    transfer_to_email_image_request, description="Use for building image request"
+)
+transfer_to_extract_images_tool = FunctionTool(
+    transfer_to_extract_images, description="Use for extracting images"
+)
+transfer_to_ingest_embeddings_tool = FunctionTool(
+    transfer_to_ingest_embeddings, description="Use for ingest embeddings"
 )
 transfer_back_to_triage_tool = FunctionTool(
     transfer_back_to_triage,
@@ -328,7 +433,11 @@ async def do_create_agent():
     
     1. DocumentToPDFAgent
     2. FileEncoderAgent
-    
+    3. PaperItemizerAgent
+    4. ClassifyViaLlmAgent
+    5. EmailImageRequestAgent
+    6. ExtractImageAgent
+    7. IngestEmbeddingAgent
     
     ## Rules:
     - Always follow this order strictly without skipping or rearranging.
@@ -338,7 +447,7 @@ async def do_create_agent():
     
     ## Output Format:
     - Only respond with the name of the next agent from this list:
-    [`DocumentToPDFAgent`, `FileEncoderAgent`]
+    [`DocumentToPDFAgent`, `FileEncoderAgent`, `PaperItemizerAgent`, `ClassifyViaLlmAgent`, `EmailImageRequestAgent`, `ExtractImageAgent`, `IngestEmbeddingAgent`]
     
     - Do NOT include any reasoning, explanation, or extra text — only the agent name.
     
@@ -352,6 +461,11 @@ async def do_create_agent():
             delegate_tools=[
                 transfer_to_pdf_converstion_agent_tools,
                 transfer_to_encode_agent_tool,
+                transfer_to_paper_itemizer_tool,
+                transfer_to_classify_via_llm_tool,
+                transfer_to_email_image_request_tool,
+                transfer_to_extract_images_tool,
+                transfer_to_ingest_embeddings_tool,
                 escalate_to_human_tool
             ],
             agent_topic_type=triage_agent_topic_type,
@@ -375,7 +489,9 @@ async def do_create_agent():
                          }"""
             ),
             model_client=model_client,
-            tools=[convert_email_data_to_pdf],
+            tools=[
+                convert_email_into_pdf,
+            ],
             delegate_tools=[transfer_back_to_triage_tool],
             agent_topic_type=convert_email_agent_name,
             user_topic_type=user_topic_type_,
@@ -408,6 +524,126 @@ async def do_create_agent():
     # Add subscriptions for the issues and repairs agent: it will receive messages published to its own topic only.
     await runtime.add_subscription(
         TypeSubscription(topic_type=encode_agent_topic_type, agent_type=encode_agent_type.type)
+    )
+
+    # Register Paper Itemizer Agent
+    paper_itemizer_agent_type = await AIAgent.register(
+        runtime,
+        type=paper_itemizer_topic_type,
+        factory=lambda: AIAgent(
+            description="Extracts structured paper content.",
+            system_message=SystemMessage(
+                content="""Extract important content from paper-like documents.
+                Input: 'path' (str), 'file_name' (str)
+                Output: Extracted structured content (dict or list of items)."""
+            ),
+            model_client=model_client,
+            tools=[
+                paper_itemizer,
+            ],
+            delegate_tools=[transfer_back_to_triage_tool],
+            agent_topic_type=paper_itemizer_topic_type,
+            user_topic_type=user_topic_type_,
+        ),
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=paper_itemizer_topic_type, agent_type=paper_itemizer_agent_type.type)
+    )
+
+    # Register ClassifyViaLlmAgent
+    classify_agent_type = await AIAgent.register(
+        runtime,
+        type=classify_via_llm_topic_type,
+        factory=lambda: AIAgent(
+            description="Classifies email content using a vision-language model (VLM).",
+            system_message=SystemMessage(
+                content="""Classify the content of an email.
+                Input: Extracted structured data or image embeddings.
+                Output: Classification label and optional metadata."""
+            ),
+            model_client=model_client,
+            tools=[
+                classify_via_llm,
+            ],
+            delegate_tools=[transfer_back_to_triage_tool],
+            agent_topic_type=classify_via_llm_topic_type,
+            user_topic_type=user_topic_type_,
+        ),
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=classify_via_llm_topic_type, agent_type=classify_agent_type.type)
+    )
+
+    # Register EmailImageRequestAgent
+    email_image_request_agent_type = await AIAgent.register(
+        runtime,
+        type=email_image_request_topic_type,
+        factory=lambda: AIAgent(
+            description="Builds an image processing request from email.",
+            system_message=SystemMessage(
+                content="""Build the input structure required for email image processing.
+                Input: Email classification or PDF metadata.
+                Output: JSON or dict request object for image processing."""
+            ),
+            model_client=model_client,
+            tools=[
+                email_image_request,
+            ],
+            delegate_tools=[transfer_back_to_triage_tool],
+            agent_topic_type=email_image_request_topic_type,
+            user_topic_type=user_topic_type_,
+        ),
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=email_image_request_topic_type, agent_type=email_image_request_agent_type.type)
+    )
+
+    # Register ExtractImageAgent
+    extract_image_agent_type = await AIAgent.register(
+        runtime,
+        type=extract_images_topic_type,
+        factory=lambda: AIAgent(
+            description="Extracts and uploads images from email.",
+            system_message=SystemMessage(
+                content="""Extract and upload images found in the email.
+                Input: Image request object (from previous step).
+                Output: Uploaded image metadata or URLs."""
+            ),
+            model_client=model_client,
+            tools=[
+                extract_images,
+            ],
+            delegate_tools=[transfer_back_to_triage_tool],
+            agent_topic_type=extract_images_topic_type,
+            user_topic_type=user_topic_type_,
+        ),
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=extract_images_topic_type, agent_type=extract_image_agent_type.type)
+    )
+
+    # Register IngestEmbeddingAgent
+    ingest_embedding_agent_type = await AIAgent.register(
+        runtime,
+        type=ingest_embeddings_topic_type,
+        factory=lambda: AIAgent(
+            description="Ingests embeddings of email content for retrieval.",
+            system_message=SystemMessage(
+                content="""Ingest the processed content (images, text, classification) as vector embeddings.
+                Input: Final structured email content.
+                Output: Embedding confirmation or record ID."""
+            ),
+            model_client=model_client,
+            tools=[
+                ingest_embeddings,
+            ],
+            delegate_tools=[transfer_back_to_triage_tool],
+            agent_topic_type=ingest_embeddings_topic_type,
+            user_topic_type=user_topic_type_,
+        ),
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=ingest_embeddings_topic_type, agent_type=ingest_embedding_agent_type.type)
     )
 
     # Register the human agent.

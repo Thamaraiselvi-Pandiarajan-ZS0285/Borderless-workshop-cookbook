@@ -1,9 +1,9 @@
+import json
 import logging
 from autogen_agentchat.messages import TextMessage
 from autogen_core import SingleThreadedAgentRuntime
 
-from pipeline_agents import *
-
+from backend.app.core.email_processing_pipelines.pipeline_agents import *
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +14,16 @@ class EmailProcessingPipeline:
 
     async def setup(self):
         self.runtime = SingleThreadedAgentRuntime()
-        await register_agent(self.runtime,"TriageAgent", FunctionTool(lambda:None),
+        await register_agent(self.runtime,"TriageAgent", FunctionTool(lambda:None, description="Setting up the agents"),
             [ttpt,ttet,tipt,tcvt,tbrt,tupt,tebt])
         for n,tool,delg in [
-            ("DocumentToPDFAgent",t1,[ttet]),
-            ("FileEncoderAgent",t2,[tipt]),
-            ("PaperItemizerAgent",t3,[tcvt]),
-            ("ClassifierAgent",t4,[tbrt]),
-            ("MetadataRequestBuilderAgent",t5,[tupt]),
-            ("MetadataUploaderAgent",t6,[tebt]),
-            ("EmbeddingAgent",t7,[])
+            ("DocumentToPDFAgent",t1,[ttpt]),
+            ("FileEncoderAgent",t2,[ttet]),
+            ("PaperItemizerAgent",t3,[tipt]),
+            ("ClassifierAgent",t4,[tcvt]),
+            ("MetadataRequestBuilderAgent",t5,[tbrt]),
+            ("MetadataUploaderAgent",t6,[tupt]),
+            ("EmbeddingAgent",t7,[tebt])
         ]:
             await register_agent(self.runtime,n,tool,delg)
 
