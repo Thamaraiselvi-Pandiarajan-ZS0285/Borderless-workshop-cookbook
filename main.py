@@ -903,7 +903,7 @@ async def process_user_query(user_query: str = Body(...), top_k: int = Body(10))
         )
 
 @app.post("/query", summary="Process a user query through decomposition, retrieval, reranking, and LLM answering.")
-async def process_query(user_query: str):
+async def process_query(user_query: str, top_k:int):
     """
     Processes a natural language query and returns a relevant answer using:
     - Query decomposition
@@ -916,9 +916,7 @@ async def process_query(user_query: str):
       "user_query": "Show me emails about Q4 sales report"
     }
     """
-    embedder = Embedder(db_engine=app.state.db_engine, db_session=app.state.db_session)
-    user_query_agent = UserQueryAgent()
-    retrieval_interface = RetrievalInterface(embedder=embedder, user_query_agent=user_query_agent)
+    retrieval_interface = RetrievalInterface(db_engine=app.state.db_engine, db_session=app.state.db_session)
 
     if not retrieval_interface:
         logger.error("Retrieval system not initialized.")
@@ -929,7 +927,7 @@ async def process_query(user_query: str):
 
     try:
         logger.info(f"Processing query: {user_query}")
-        answer = await retrieval_interface.process_user_query(user_query)
+        answer = await retrieval_interface.process_user_query(user_query, top_k=top_k)
         return {"query": user_query, "answer": answer}
     except Exception as e:
         logger.exception("Error processing query: %s", str(e))
