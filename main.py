@@ -54,7 +54,7 @@ from backend.src.core.embeding.embedder import Embedder
 from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
 from backend.src.core.ingestion.paper_itemizer import PaperItemizer
 from backend.src.core.meta_extractor.metadata_validation import MetadataValidatorAgent
-from backend.src.core.retrival.retrieval import RetrievalInterface
+from backend.src.core.retrival.retrieval import RetrievalAgent
 from backend.src.core.retrival.user_query_handler import UserQueryAgent
 
 # Import database modules
@@ -916,7 +916,7 @@ async def process_query(user_query: str, top_k:int):
       "user_query": "Show me emails about Q4 sales report"
     }
     """
-    retrieval_interface = RetrievalInterface(db_engine=app.state.db_engine, db_session=app.state.db_session)
+    retrieval_interface = RetrievalAgent(db_engine=app.state.db_engine, db_session=app.state.db_session)
 
     if not retrieval_interface:
         logger.error("Retrieval system not initialized.")

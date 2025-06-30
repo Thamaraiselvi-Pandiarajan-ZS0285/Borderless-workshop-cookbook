@@ -1,4 +1,5 @@
 import logging
+from abc import abstractmethod
 from typing import List
 
 from sqlalchemy.engine.base import Engine
@@ -7,6 +8,7 @@ from sqlalchemy.orm.session import sessionmaker
 from backend.src.config.dev_config import USER_QUERY_AGENT_NAME
 from backend.src.core.base_agents.base_agent import BaseAgent
 from backend.src.core.base_client.base_client import OpenAiClient
+from backend.src.core.retrival.retreival_interface import RetrievalInterface
 from backend.src.db.models.metadata_extraction_json_embedding import MetadataExtractionJsonEmbedding
 from backend.src.prompts.decomposition_prompt import SEMANTIC_DECOMPOSITION_PROMPT
 import numpy as np
@@ -15,8 +17,9 @@ from backend.src.prompts.user_query_prompt import USER_QUERY_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-class RetrievalInterface:
+class RetrievalAgent(RetrievalInterface):
     def __init__(self,db_engine: Engine, db_session: sessionmaker):
+        super().__init__(db_engine, db_session)
         self.client = OpenAiClient().open_ai_chat_completion_client
         self.embedding_client = OpenAiClient().openai_embedding_client
         self.base_agent = BaseAgent(self.client)
