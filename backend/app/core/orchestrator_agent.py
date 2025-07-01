@@ -122,7 +122,7 @@ class Orchestrator:
                             After classification, hand off to the retrieval agent for context gathering from db.
                             Expect JSON-formatted email data.
                             """,
-            tools=self._get_classification_tools(),
+            tools=self._get_classification_delegation_tools(),
             memory=[self.shared_memory,classification_memory],
             model_context = UnboundedChatCompletionContext()
         )
@@ -142,31 +142,30 @@ class Orchestrator:
                            You are responsible for retrieving relevant information in conversation: {self.conversation_id}
                            Use RAG to find contextual information based on the classified email.
                            """,
-            tools=self._get_retrieval_tools(self.db_engine,self.db_session),
+            tools=self._get_retrieval_delegation_tools(self.db_engine,self.db_session),
             memory=[self.shared_memory, retrieval_memory],
             model_context=UnboundedChatCompletionContext()
         )
 
-    def _get_classification_tools(self):
+    def _get_classification_delegation_tools(self):
         """Get tools for email classification agent"""
 
-        async def email_classification_tool(email_input: EmailClassifyImageRequest) -> str:
-            """Classify the email content"""
+        async def delegate_to_classification_planner(email_input: EmailClassifyImageRequest) -> str:
+            """Delegate email classification to the specialized planner"""
             try:
-                # Convert string input to proper request format if needed
-                # classification_request = EmailClassifyImageRequest()
-                tool = EmailClassificationTool()
-                result = tool.test(email_input)
+                # result = await self.email_classification_planner.execute_classification_plan(email_input) #(execute_classification_plan - method with .run comment)
+                result = email_input
+
                 if self.memory_manager:
                     await self.memory_manager.add_message_to_shared_memory(
-                        content=f"Email classification completed: {result}",
+                        content=f"Classification planner completed: {result}",
                         sender=EMAIL_CLASSIFIER_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "email_classification", "stage": "classification"}
+                        metadata={"delegation": "classification_planner", "stage": "classification"}
                     )
                 return f"Email classified successfully: {result}"
             except Exception as e:
-                error_msg = f"Classification error: {str(e)}"
+                error_msg = f"Classification planner error: {str(e)}"
 
                 # Log error to memory
                 if self.memory_manager:
@@ -174,33 +173,34 @@ class Orchestrator:
                         content=error_msg,
                         sender=EMAIL_CLASSIFIER_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "email_classification", "stage": "classification", "error": True,"content" : str(e)}
+                        metadata={"delegation": "classification_planner", "stage": "classification", "error": True,"content" : str(e)}
                     )
 
                 return error_msg
 
-        return [email_classification_tool]
+        return [delegate_to_classification_planner]
 
-    def _get_retrieval_tools(self, db_engine:Engine, db_session : sessionmaker):
+    def _get_retrieval_delegation_tools(self, db_engine:Engine, db_session : sessionmaker):
         """Get tools for retrieval agent"""
         self.db_engine = db_engine
         self.db_session = db_session
 
-        async def retrieval_tool(query: str) -> str:
+        async def delegate_to_retrieval_planner(query: str) -> str:
             """Retrieve relevant information from database"""
             try:
-                result = retrieval_tool_fn(user_query=query , db_engine =self.db_engine, db_session =self.db_session )
+                # result = await self.retrieval_planner.execute_retrieval_plan(user_query=query , db_engine =self.db_engine, db_session =self.db_session )
+                result = query
                 # Log retrieval result to memory
                 if self.memory_manager:
                     await self.memory_manager.add_message_to_shared_memory(
-                        content=f"Information retrieved for query '{query}': {result}",
+                        content=f"Retrieval planner completed: '{query}': {result}",
                         sender=RETRIEVAL_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "retrieval", "stage": "retrieval", "query": query}
+                        metadata={"delegation": "retrieval_planner", "stage": "retrieval", "query": query}
                     )
-                return f"Retrieved information: {result}"
+                return f"Retrieved information from the planner: {result}"
             except Exception as e:
-                error_msg = f"Retrieval error: {str(e)}"
+                error_msg = f"Retrieval planner error: {str(e)}"
 
                 # Log error to memory
                 if self.memory_manager:
@@ -208,11 +208,11 @@ class Orchestrator:
                         content=error_msg,
                         sender=RETRIEVAL_AGENT_NAME,
                         role="assistant",
-                        metadata={"tool_used": "retrieval", "stage": "retrieval", "error": True, "content" : str(e)}
+                        metadata={"delegation": "retrieval_planner", "stage": "retrieval", "error": True, "content" : str(e)}
                     )
 
                 return error_msg
-        return [retrieval_tool]
+        return [delegate_to_retrieval_planner]
 
 
     def _setup_team_chat(self):
