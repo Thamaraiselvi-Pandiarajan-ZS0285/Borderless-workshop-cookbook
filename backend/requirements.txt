@@ -22,4 +22,5 @@ PyPDF2
 python-docx
 sentence-transformers
 autogen-agentchat
+msal
 
