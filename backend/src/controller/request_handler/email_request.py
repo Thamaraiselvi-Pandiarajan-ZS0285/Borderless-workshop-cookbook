@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 
@@ -24,3 +25,17 @@ class EmailClassifyImageInput(BaseModel):
 class EmailClassifyImageRequest(BaseModel):
     imagedata: List[EmailClassifyImageInput]
     json_data : EmailClassificationRequest
+
+@dataclass
+class RFPContext:
+    """Context structure for RFP analysis"""
+    raw_content: str
+    attachments_content: str
+    metadata: Dict[str, Any]
+
+@dataclass
+class DimensionalSummary:
+    """Structure for dimensional summary results"""
+    dimension: str
+    summary: str
+    confidence_score: float

@@ -20,6 +20,7 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from json import JSONDecodeError
 from typing import Dict, Any
 
@@ -36,7 +37,7 @@ from backend.src.config.dev_config import BASE_PATH, DEFAULT_IMAGE_FORMAT
 
 # Import request/response handlers
 from backend.src.controller.request_handler.email_request import (
-    EmailClassificationRequest, EmailClassifyImageRequest
+    EmailClassificationRequest, EmailClassifyImageRequest, RFPContext
 )
 from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
 from backend.src.controller.request_handler.paper_itemizer import PaperItemizerRequest
@@ -575,6 +576,88 @@ async def classify_email_with_vision(request: EmailClassifyImageRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
         )
+
+
+
+@app.post("/api/classify_email_vlm_summarize", tags=["Email Processing"])
+async def summarizer(request: EmailClassificationRequest):
+    """
+    Classify email using Vision Language Model (VLM) for image analysis.
+
+    Args:
+        request (EmailClassifyImageRequest): Request containing email data and images
+
+    Returns:
+        dict: Email classification results with vision-based analysis
+
+    Raises:
+        HTTPException: If VLM classification fails
+    """
+
+    try:
+        # Initialize processors
+        summarizer = SummarizationAgent()
+        extractor = AttachmentExtractor()
+
+        full_email_content = request.body
+        combined_page_text = ""
+        email_and_attachment_summary = ""
+
+        # Process attachments
+        if request.hasAttachments and request.attachments:
+            try:
+                attachment_content = extractor.extract_many(request.attachments)
+                pages = split_into_pages(attachment_content)
+
+                page_content = []
+                for idx, page in enumerate(pages):
+                    # summary = await summarizer.summarize_text(page)
+                    page_content.append(f"Page {idx + 1} Summary:\n{page}")
+
+                combined_page_text = "\n\n".join(page_content)
+                # attachment_summary = await summarizer.summarize_text(combined_summaries_text)
+
+            except Exception as e:
+                logger.warning("Error processing attachments: %s", str(e))
+                combined_page_text = "Error processing attachments"
+
+        full_email_content += "\n\nAttachment content:\n" + combined_page_text
+
+        # Create RFP context for multidimensional analysis
+        rfp_context = RFPContext(
+            raw_content=request.body,
+            attachments_content=full_email_content,
+            metadata={"source": "email", "timestamp": datetime.now().isoformat()}
+        )
+
+        # Perform multidimensional analysis
+        dimensional_summaries = await summarizer.analyze_rfp_multidimensional(rfp_context)
+        # Generate comprehensive summary
+        comprehensive_summary = await summarizer._create_master_aggregation_summary(dimensional_summaries)
+
+        return {
+            "status": "success",
+            "multidimensional_analysis": comprehensive_summary,
+            "dimensional_summaries": {
+                dim: {
+                    "summary": summary.summary,
+                    "confidence_score": summary.confidence_score
+                }
+                for dim, summary in dimensional_summaries.items()
+            },
+            "data_protection_status": "applied",
+            "processing_metadata": {
+                "dimensions_analyzed": len(dimensional_summaries),
+            }
+        }
+
+    except Exception as e:
+        logger.error("Error in enhanced market research email classification: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 
 
 @app.post("/api/extraction/metadata_extractor", tags=["Metadata Extraction"])

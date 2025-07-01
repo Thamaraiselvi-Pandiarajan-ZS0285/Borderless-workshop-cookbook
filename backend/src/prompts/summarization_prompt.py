@@ -29,3 +29,81 @@ Required documentation (e.g., safety certifications, quality standards)
 Any compliance requirements (e.g., MNRE guidelines, government standards)
 Submission and clarification deadlines (date and time)"""
     }
+
+PERSPECTIVE_PROMPT_VARIANTS: dict[str, str] = {
+    "interview_type" :"""
+            Analyze the RFP content to identify interview methodologies mentioned:
+            - Quantitative research (surveys, polls, structured interviews)
+            - Qualitative research (focus groups, in-depth interviews, ethnography)
+            - Mixed methods approaches
+            - Online vs offline data collection
+            - Sample size requirements and methodology
+            Summarize in 2-3 concise sentences focusing on research approach.""",
+
+    "demographics" : """
+            Extract demographic targeting information from the RFP:
+            - Age groups, gender specifications
+            - Income levels, education requirements
+            - Occupation or professional categories
+            - Household composition or family status
+            - Any specific demographic exclusions
+        """,
+    "geographics" : """
+            Identify geographical scope and requirements:
+            - Target regions, countries, states, or cities
+            - Urban vs rural specifications
+            - Market penetration areas
+            - Regional compliance or regulatory considerations
+            - Language or cultural requirements by geography
+           """,
+    "sector": """ 
+            Determine the industry sector and market focus:
+            - Primary industry vertical (healthcare, finance, retail, etc.)
+            - Sub-sectors or niche markets
+            - B2B vs B2C orientation
+            - Market maturity stage (emerging, established, declining)
+            - Competitive landscape considerations
+            Provide sector classification and key market characteristics.""",
+    "methodology": """
+            Extract research methodology and technical requirements:
+            - Data collection methods and tools
+            - Statistical analysis requirements
+            - Quality assurance protocols
+            - Technology platforms or software requirements
+            - Validation and verification processes
+            Summarize methodological approach and technical specifications.""",
+    "timeline": """
+            Identify project timeline and milestones:
+            - Project duration and key phases
+            - Submission deadlines and decision timelines
+            - Data collection periods
+            - Reporting and deliverable schedules
+            - Critical path dependencies
+            """,
+    "budget_scope": """
+            Analyze budget and financial scope indicators:
+            - Project scale indicators (without specific amounts)
+            - Cost structure preferences (fixed vs variable)
+            - Payment terms and milestone-based payments
+            - Value-added services expectations
+            - ROI or cost-effectiveness criteria
+            """,
+    "deliverables": """
+            Extract expected deliverables and outcomes:
+            - Report formats and presentation requirements
+            - Data visualization and dashboard needs
+            - Raw data delivery specifications
+            - Presentation and stakeholder communication requirements
+            - Follow-up services or ongoing support
+            Summarize deliverable expectations and format requirements.
+            """,
+    "vendor_requirements": """
+            Identify vendor qualification and capability requirements:
+            - Industry experience and track record
+            - Team composition and expertise requirements
+            - Certification and compliance needs
+            - Technology infrastructure capabilities
+            - Geographic presence or partnership requirements
+            Summarize vendor profile requirements"""
+
+}
