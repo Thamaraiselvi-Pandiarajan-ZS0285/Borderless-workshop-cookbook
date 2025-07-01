@@ -18,6 +18,8 @@ TIGGER_REASON_AGENT_NAME ="TriggerReasonAgent"
 VLM_CLASSIFICATION_AGENT_NAME="ClassificationAgent"
 SUMMARIZATION_AGENT_NAME="SummarizationAgent"
 USER_QUERY_AGENT_NAME="UserQueryAgent"
+ORCHESTRATOR_AGENT_NAME = "OrchesrationAgent"
+RETRIEVAL_AGENT_NAME ="RetrievalAgent"
 MODEL_INFO = {
     "family": "gpt-4",
     "vision": False,

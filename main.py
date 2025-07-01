@@ -39,6 +39,7 @@ from backend.src.controller.request_handler.email_request import (
     EmailClassificationRequest, EmailClassifyImageRequest
 )
 from backend.src.controller.request_handler.metadata_extraction import EmailImageRequest
+from backend.src.controller.request_handler.orchestrator import OrchestrateRequest
 from backend.src.controller.request_handler.paper_itemizer import PaperItemizerRequest
 from backend.src.controller.response_handler.email_classifier_response import (
     build_email_classifier_response, email_classify_response_via_vlm
@@ -48,6 +49,7 @@ from backend.src.controller.response_handler.paper_itemizer import build_paper_i
 
 # Import core processing modules
 from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
+from backend.src.core.base_agents.session_memory_manager import AutogenSessionManager
 from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
 from backend.src.core.email_classifier.summarization_agent import SummarizationAgent
 from backend.src.core.embeding.embedder import Embedder
@@ -932,6 +934,66 @@ async def process_query(user_query: str, top_k:int):
     except Exception as e:
         logger.exception("Error processing query: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+
+
+
+@app.post("/orchestrate")
+async def run_orchestrator(request: OrchestrateRequest):
+    """
+    Endpoint to trigger orchestration workflow.
+
+    Input format:
+    {
+        "message": "Your input text here",
+        "conversation_id": "optional_conversation_id"
+    }
+
+    Output:
+    {
+        "response": "Result from orchestrator",
+        "conversation_id": "ID used for this interaction"
+    }
+    """
+    try:
+        logger.info(f"Received orchestration request: {request.message[:100]}...")
+        session_manager = AutogenSessionManager(db_engine=app.state.db_engine, db_session=app.state.db_session)
+
+        if request.conversation_id:
+            orchestrator =session_manager.get_session(request.conversation_id)
+            if not orchestrator:
+                orchestrator = session_manager.load_session(request.conversation_id)
+            if not orchestrator:
+                conversation_id =session_manager.create_session(request.conversation_id)
+                orchestrator = session_manager.get_session(conversation_id)
+        else:
+            # Create completely new session
+            conversation_id = session_manager.create_session()
+            orchestrator = session_manager.get_session(conversation_id)
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Failed to create or load orchestrator")
+
+        # Execute orchestration
+        logger.info(f"Starting orchestration for conversation: {orchestrator.conversation_id}")
+        response = await orchestrator.orchestrate_async(request.message)
+
+        # Save session state
+        session_manager.save_session(orchestrator.conversation_id)
+
+        # Get memory statistics
+        memory_stats = orchestrator.get_memory_stats()
+
+        logger.info(f"Orchestration completed for conversation: {orchestrator.conversation_id}")
+
+        return {
+            "response": response,
+            "conversation_id": orchestrator.conversation_id,
+            "memory_stats": memory_stats,
+            "status": "success"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in orchestration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Orchestration failed: {str(e)}")
 
 
 
