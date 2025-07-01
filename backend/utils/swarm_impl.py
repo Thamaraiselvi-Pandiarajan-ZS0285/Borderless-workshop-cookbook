@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import uuid
 from typing import Any, Dict, List
 
@@ -61,8 +62,7 @@ config_list = [
 ]
 llm_config = {
     "config_list": config_list,
-    "temperature": 0.1,
-    "timeout": 120,
+    "temperature": 0,
 }
 
 model_client = AzureOpenAIChatCompletionClient(
@@ -109,21 +109,134 @@ def do_paper_itemizer(data: Dict[str, Any]) -> Dict[str, Any]:
     result = PaperItemizer(input=req.input, file_name=req.file_name, extension=req.file_extension).do_paper_itemizer()
     return build_paper_itemizer_response(result, 200, "Paper itemization successful.")
 
+def do_classify_via_vlm(data: Dict[str, Any]) -> Dict[str, Any]:
+    # Step 1: Extract inputs from dict
+    paper_items = data["paper_itemizer_response"]["results"]
+    email_json = data["raw_email_data"]
+
+    # Step 2: Build EmailClassifyImageRequest manually
+    classify_image_request_data = {
+        "imagedata": [
+            {
+                "input_path": item["filePath"],
+                "file_name": item["fileName"],
+                "file_extension": item["fileExtension"]
+            }
+            for item in paper_items
+        ],
+        "json_data": email_json
+    }
+
+    req = EmailClassifyImageRequest(**classify_image_request_data)
+
+    # Step 3: Actual classification logic
+    classifier = EmailClassifierProcessor()
+    summarizer = SummarizationAgent()
+    extractor = AttachmentExtractor()
+
+    full = req.json_data.body
+    attach_summary = ""
+
+    if req.json_data.hasAttachments:
+        pages = split_into_pages(extractor.extract_many(req.json_data.attachments))
+        page_summaries = [f"Page {i + 1}:\n{summarizer.summarize_text(p)}" for i, p in enumerate(pages)]
+        attach_summary = summarizer.summarize_text("\n".join(page_summaries))
+        full += "\nAttachment Summary\n\n" + attach_summary
+
+    extracted = []
+    for item in req.imagedata:
+        base64_img = (
+            FileToBase64(item.input_path).do_base64_encoding_by_file_path()
+            if os.path.exists(item.input_path) else item.input_path
+        )
+        extracted.append(classifier.classify_via_vlm(base64_img))
+
+    summary = "".join(
+        f"{label}:\n{summarizer.summarize_text(full, variant)}\n\n"
+        for label, variant in TASK_VARIANTS.items()
+    )
+
+    return {
+        "classification_result": {
+            "classification": extracted,
+            "summary": summary
+        },
+        "paper_itemizer_response": data["paper_itemizer_response"],
+        "raw_email_data": email_json
+    }
+
+
+def build_email_image_request(data: Dict[str, Any]) -> Dict[str, Any]:
+    resp = data["paper_itemizer_response"]
+    classification = data["classification_result"]
+    return {
+        "data": [
+            {
+                "input": r["filePath"],
+                "file_name": r["fileName"],
+                "file_extension": r["fileExtension"],
+                "category": classification["classification"],
+            } for r in resp["results"]
+        ]
+    }
+
+def upload_email_images(data: Dict[str, Any]) -> Dict[str, Any]:
+    req = EmailImageRequest(**data)
+    ocr = EmailOCRAgent()
+    val = MetadataValidatorAgent()
+    cons = MetadataConsolidatorAgent()
+
+    extracted, errors = [], []
+
+    for item in req.data:
+        try:
+            base64_img = FileToBase64(item.input).do_base64_encoding_by_file_path()
+            cleaned = re.sub(
+                r"^```json\s*|\s*```$", "",
+                ocr.extract_text_from_base64(base64_img, item.category).strip()
+            )
+            val.validate_metadata(cleaned, item.category)
+            extracted.append(cleaned)
+        except Exception as e:
+            errors.append({"file_name": item.file_name, "error": str(e)})
+
+    if errors:
+        return {"errors": errors}
+
+    return {"consolidated_metadata": cons.consolidate(extracted, category=req.data[0].category)}
+
+def ingest_all_embeddings(data: Dict[str, Any]) -> Dict[str, Any]:
+    resp = data["upload_response"]
+    summary = data["classification_summary"]
+    for r in resp.get("results", []):
+        text = (
+            f"Subject: {r['extracted_metadata']['subject']}\n\n"
+            f"{r['extracted_metadata']['full_email_text']}\nAttachment Summary:{summary}"
+        )
+        Embedder(None, None).ingest_email_for_content(text, text)
+    return {"status": "success"}
+
 # Define agents
 planner = AssistantAgent(
     name="planner",
     model_client=model_client,
-    handoffs=["email_processor", "pdf_encoder", "image_converter"],
+    handoffs=[
+        "email_processor", "pdf_encoder", "image_converter", "classifier", "request_builder",
+        "uploader", "embedding_agent"
+    ],
     system_message="""You are a data Piepline processing agent.
     Your role is to:
     1. Initiate the workflow by handing off to the email_processor with the email data.
     2. Coordinate handoffs between agents based on their outputs.
     3. Terminate the workflow with 'TERMINATE' when the report is generated.
-    Workflow:
-    - Send email data to email_processor to convert to PDF.
-    - Pass PDF path and file name to pdf_encoder for base64 encoding.
-    - Pass encoded data to image_converter for report generation.
-    - Terminate after receiving the final report.
+     Workflow:
+    1. Send raw email data to email_processor → PDF
+    2. Send PDF path and file name to pdf_encoder → base64
+    3. Send base64 to image_converter → paper itemizer response
+    4. Send paper itemizer + raw email to classifier → classify via VLM
+    5. Send classifier + paper itemizer response to request_builder → prepare OCR input
+    6. Send OCR input to uploader → extract + validate metadata
+    7. Send final metadata + classification summary to embedding_agent → embed
     Keep track of the workflow state and ensure proper handoffs.""",
 )
 
@@ -157,13 +270,54 @@ report_generator = AssistantAgent(
     Return the report to the planner.""",
 )
 
+classifier = AssistantAgent(
+    name="classifier",
+    model_client=model_client,
+    handoffs=["planner"],
+    tools=[do_classify_via_vlm],
+    system_message="Use the do_classify_via_vlm tool to classify the paper items using vision-language model (VLM)."
+)
+
+request_builder = AssistantAgent(
+    name="request_builder",
+    model_client=model_client,
+    handoffs=["planner"],
+    tools=[build_email_image_request],
+    system_message="Use the build_email_image_request tool to prepare the OCR input request from classification + itemizer data."
+)
+
+uploader = AssistantAgent(
+    name="uploader",
+    model_client=model_client,
+    handoffs=["planner"],
+    tools=[upload_email_images],
+    system_message="Use the upload_email_images tool to extract and validate metadata using OCR."
+)
+
+embedding_agent = AssistantAgent(
+    name="embedding_agent",
+    model_client=model_client,
+    handoffs=["planner"],
+    tools=[ingest_all_embeddings],
+    system_message="Use the ingest_all_embeddings tool to embed the extracted metadata and classification summary into the vector DB."
+)
+
 # Define termination condition
 text_termination = TextMentionTermination("TERMINATE")
 termination = text_termination
 
 # Create Swarm
 pipeline_executor_team = Swarm(
-    participants=[planner, email_processor, pdf_encoder, report_generator],
+    participants=[
+        planner,
+        email_processor,
+        pdf_encoder,
+        report_generator,
+        classifier,
+        request_builder,
+        uploader,
+        embedding_agent
+    ],
     termination_condition=termination
 )
 
