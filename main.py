@@ -54,6 +54,7 @@ from backend.src.core.embeding.embedder import Embedder
 from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
 from backend.src.core.ingestion.paper_itemizer import PaperItemizer
 from backend.src.core.meta_extractor.metadata_validation import MetadataValidatorAgent
+from backend.src.core.retrival.retrieval import RetrievalAgent
 from backend.src.core.retrival.user_query_handler import UserQueryAgent
 
 # Import database modules
@@ -863,6 +864,7 @@ async def process_user_query(user_query: str = Body(...), top_k: int = Body(10))
 
         # Step 2: Generate query embedding
         query_embedding = await embedder.embed_text(decomposed_query)
+        logger.info("query_embedding: ",query_embedding)
 
         # Step 3: Semantic search
         semantic_results = embedder.semantic_search(query_embedding, top_k=top_k * 3)
@@ -899,6 +901,38 @@ async def process_user_query(user_query: str = Body(...), top_k: int = Body(10))
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process query: {str(e)}"
         )
+
+@app.post("/query", summary="Process a user query through decomposition, retrieval, reranking, and LLM answering.")
+async def process_query(user_query: str, top_k:int):
+    """
+    Processes a natural language query and returns a relevant answer using:
+    - Query decomposition
+    - Semantic search
+    - Cross-encoder reranking
+    - LLM-based answer generation
+
+    Example input:
+    {
+      "user_query": "Show me emails about Q4 sales report"
+    }
+    """
+    retrieval_interface = RetrievalAgent(db_engine=app.state.db_engine, db_session=app.state.db_session)
+
+    if not retrieval_interface:
+        logger.error("Retrieval system not initialized.")
+        raise HTTPException(status_code=500, detail="System not initialized.")
+
+    if not user_query or not isinstance(user_query, str) or not user_query.strip():
+        raise HTTPException(status_code=400, detail="Invalid query input.")
+
+    try:
+        logger.info(f"Processing query: {user_query}")
+        answer = await retrieval_interface.process_user_query(user_query, top_k=top_k)
+        return {"query": user_query, "answer": answer}
+    except Exception as e:
+        logger.exception("Error processing query: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+
 
 
 # Global exception handler for unhandled exceptions

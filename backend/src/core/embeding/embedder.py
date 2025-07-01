@@ -29,6 +29,7 @@ class Embedder:
         Initialize the Embedder with a database engine and session.
         """
         try:
+            self.embedding_client = OpenAiClient().openai_embedding_client
             self.client = OpenAiClient().open_ai_chat_completion_client
             self.base_agent = BaseAgent(self.client)
             self.db_engine = db_engine
@@ -55,7 +56,7 @@ class Embedder:
             raise ValueError("Cannot embed empty text.")
 
         try:
-            response = self.client.embeddings.create(
+            response = self.embedding_client.embeddings.create(
                 model="text-embedding-3-small",
                 input=text
             )
@@ -194,7 +195,7 @@ class Embedder:
             )
 
             response = await self.user_query_agent.run(task=user_prompt)
-            content = response.choices[0].message.content.strip()
+            content = response.messages[-1].content
             return content
         except Exception as e:
             logger.exception("Failed to answer query: %s", str(e))
