@@ -46,10 +46,13 @@ class AgentInitialization:
     async def run_agent_task(self,agent, task: str, fallback_result=None, result_type=str):
         try:
             result = await agent.run(task=task)
-            content = list(result.messages)[-1].content
-            summary = await self.summarization_agent.run(task=content)
-            combined_result = f"{content}\n\n---\n**Summary:** {summary}"
-            return result_type(content)
+            response_content = list(result.messages)[-1].content
+            summary = await self.summarization_agent.run(task=response_content)
+            summary_content =list(summary.messages)[-1].content
+            return result_type({
+                "response": response_content,
+                "summary": summary_content
+            })
         except Exception as e:
             logger.exception(f"❌ Agent task failed: {agent.name}")
             return fallback_result

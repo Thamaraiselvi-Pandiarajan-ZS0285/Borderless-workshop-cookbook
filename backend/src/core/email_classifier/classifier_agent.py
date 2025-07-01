@@ -1,3 +1,6 @@
+import ast
+import json
+
 import tiktoken
 import logging
 from backend.src.config.dev_config import *
@@ -34,6 +37,10 @@ class EmailClassifierProcessor:
 
         return enc.decode(tokens), was_truncated
 
+    def get_response(self,result):
+        classification_dict = ast.literal_eval(result)
+        return classification_dict["response"]
+
     async def process_email(self, subject: str, body: str) -> str:
         combined_input = f"Subject: {subject}\n\nBody: {body}"
         truncated_input, was_truncated = self._truncate_to_max_tokens(combined_input)
@@ -42,15 +49,15 @@ class EmailClassifierProcessor:
             logger.warning("Input was truncated due to token limit.")
             return await self.trigger_message.get_trigger_message(subject, body, "Unclear", 0.0, "Invalid")
 
-
         classification = await self.classifier.classify(truncated_input)
-        validation = await self.validator.validate_classification(subject, body, classification)
-        confidence = await self.confidence_score.calculate_confidence(subject, body, classification)
+        classification_response = self.get_response(classification)
+        validation = await self.validator.validate_classification(subject, body, classification_response)
+        confidence = await self.confidence_score.calculate_confidence(subject, body, classification_response)
 
         if validation == "Invalid" and confidence < 95 and classification.lower() == "unclear":
-            return await self.trigger_message.get_trigger_message(subject, body, classification, confidence, validation)
+            return await self.trigger_message.get_trigger_message(subject, body, classification_response, confidence, validation)
 
-        return classification
+        return classification_response
 
     async def classify_via_vlm(self, base64_str: str) -> str:
         if not base64_str or not isinstance(base64_str, str):
