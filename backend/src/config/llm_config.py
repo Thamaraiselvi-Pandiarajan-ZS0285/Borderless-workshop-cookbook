@@ -1,6 +1,6 @@
 from backend.src.config.dev_config import *
 
-class LlmConfig():
+class LlmConfig:
     def __init__(self):
         self.llm_config= {
                     "config_list": [{
