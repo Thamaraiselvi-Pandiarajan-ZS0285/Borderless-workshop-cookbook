@@ -568,9 +568,9 @@ async def run_orchestrator(request: OrchestrateRequest):
             orchestrator =session_manager.get_session(request.conversation_id)
             if not orchestrator:
                 orchestrator = session_manager.load_session(request.conversation_id)
-                if not orchestrator:
-                    conversation_id =session_manager.create_session(request.conversation_id)
-                    orchestrator = session_manager.get_session(conversation_id)
+            if not orchestrator:
+                conversation_id =session_manager.create_session(request.conversation_id)
+                orchestrator = session_manager.get_session(conversation_id)
         else:
             # Create completely new session
             conversation_id = session_manager.create_session()
