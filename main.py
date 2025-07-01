@@ -21,7 +21,7 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, status
 from fastapi.responses import JSONResponse, FileResponse
@@ -49,6 +49,7 @@ from backend.src.controller.response_handler.paper_itemizer import build_paper_i
 # Import core processing modules
 from backend.src.core.base_agents.ocr_agent import EmailOCRAgent
 from backend.src.core.email_classifier.classifier_agent import EmailClassifierProcessor
+from backend.src.core.graph_api.graph_api_fetcher import GraphEmailFetcher
 from backend.src.core.summarization.summarization_agent import SummarizationAgent
 from backend.src.core.embeding.embedder import Embedder
 from backend.src.core.ingestion.email_to_pdf_converter import HTMLEmailToPDFConverter
@@ -68,6 +69,8 @@ from backend.src.utils.base_64_ops.base_64_utils import (
 )
 from backend.src.utils.extract_data_from_file import AttachmentExtractor, split_into_pages
 from backend.src.utils.file_ops.file_utils import file_save
+
+from backend.src.core.graph_api import graph_api_fetcher
 
 # Configure logging
 logging.basicConfig(
@@ -183,6 +186,7 @@ app = FastAPI(
 )
 
 logger.info("FastAPI application initialized.")
+fetcher = GraphEmailFetcher()
 
 
 @app.get("/", tags=["Health Check"])
@@ -198,6 +202,10 @@ def health_check():
         "status": "healthy",
         "version": "1.0.0"
     }
+
+@app.get("/api/get_emails",tags=["Graph API fetcher"])
+def get_emails_from_graph_api(top: int = 10):
+    return fetcher.get_messages_with_attachments(top)
 
 
 @app.post("/api/encode", tags=["File Operations"])

@@ -51,14 +51,18 @@ class GraphEmailFetcher:
                                 contentBytes=att.get("contentBytes")
                             ))
 
-            email = EmailClassificationRequest(
-                sender=msg.get("from", {}).get("emailAddress", {}).get("address", ""),
-                received_at=msg.get("sentDateTime"),
-                subject=msg.get("subject", ""),
-                body=msg.get("body", {}).get("content", ""),
-                hasAttachments=msg.get("hasAttachments", False),
-                attachments=attachments_list
-            )
-            result.append(email)
+            # email = EmailClassificationRequest(
+            #     sender=msg.get("from", {}).get("emailAddress", {}).get("address", ""),
+            #     received_at=msg.get("sentDateTime"),
+            #     subject=msg.get("subject", ""),
+            #     body=msg.get("body", {}).get("content", ""),
+            #     hasAttachments=msg.get("hasAttachments", False),
+            #     attachments=attachments_list
+            # )
+            email_with_attachment={
+                "email":msg,
+                "attachment":attachments_list
+            }
+            result.append(email_with_attachment)
 
         return result
