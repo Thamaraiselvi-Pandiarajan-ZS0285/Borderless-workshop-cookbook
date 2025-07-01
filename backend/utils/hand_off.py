@@ -331,42 +331,6 @@ class AIAgent(RoutedAgent):
             logger.error(f"[Agent:{self.id.type}] Error during handle_task: {e}", exc_info=True)
             raise
 
-class UserAgent(RoutedAgent):
-    def __init__(self, description: str, user_topic_type: str, agent_topic_type: str) -> None:
-        super().__init__(description)
-        self._user_topic_type = user_topic_type
-        self._agent_topic_type = agent_topic_type
-
-    @message_handler
-    async def handle_task_result(self, message: AgentResponse, ctx: MessageContext) -> None:
-        last_message = message.context[-1]
-        if isinstance(last_message, dict) and last_message.get('content') in [
-            "ConvertEmailToPdf", "FileEncoderAgent", "PaperItemizerAgent",
-            "ClassifyViaLlmAgent", "EmailImageRequestAgent", "ExtractImageAgent",
-            "IngestEmbeddingAgent", "TriageAgent"
-        ]:
-            await self.publish_message(
-                UserTask(context=[
-                    UserMessage(**msg) if msg['type'] == 'UserMessage' else AssistantMessage(**msg)
-                    for msg in message.context
-                ]),
-                topic_id=TopicId(last_message['content'], source=self.id.key)
-            )
-            return
-
-        user_input = input("User (type 'exit' to close the session): ")
-        print(f"{'-' * 80}\n{self.id.type}:\n{user_input}", flush=True)
-        if user_input.strip().lower() == "exit":
-            print(f"{'-' * 80}\nUser session ended, session ID: {self.id.key}.")
-            return
-        message.context.append({"type": "UserMessage", "content": user_input, "source": "User", "thought": None})
-        await self.publish_message(
-            UserTask(context=[
-                UserMessage(**msg) if msg['type'] == 'UserMessage' else AssistantMessage(**msg)
-                for msg in message.context
-            ]),
-            topic_id=TopicId(message.reply_to_topic_type, source=self.id.key)
-        )
 
 class OutputAgent(RoutedAgent):
     def __init__(self, description: str) -> None:
@@ -535,7 +499,10 @@ async def do_create_agent():
             system_message=SystemMessage(
                 content="""Encode a PDF file to base64.
     Input: 'path' (str), 'file_name' (str).
-    Output: base64 string.
+    Output: input: str
+    file_name: str 
+    file_extension: str = ".jpg"
+    this would be the output of the encode agent and that to be transferred to be
     After encoding, delegate to PaperItemizerAgent using transfer_to_paper_itemizer."""
             ),
             model_client=model_client,
@@ -556,12 +523,11 @@ async def do_create_agent():
         factory=lambda: AIAgent(
             description="Agent to extract structured data from PDF.",
             system_message=SystemMessage(
-                content="""Extract structured data from a PDF document.
-        "Split a PDF document into multiple image chunks (usually per page). "
-        "Input:  input: str
-    file_name: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    file_extension: str = ".jpg""
-        "Output: List of image file paths generated from the PDF.", delegate to ClassifyViaLlmAgent using transfer_to_classify_via_llm."""
+                content="""You are the PaperItemizerAgent. Your task is to extract structured data from a PDF document by splitting it into image chunks (usually per page).
+                Input: Extract the output from FileEncoderAgent's do_encode_via_path tool, available in the context as a FunctionExecutionResultMessage. This output is a dictionary with 'input' (base64 string), 'file_name' (string), and 'file_extension' (string, must be '.jpg').
+                Action: Call the do_paper_itemizer tool with a argument containing these fields (e.g., {"input": "<base64>", "file_name": "<name>", "file_extension": ".jpg"}).
+                Output: List of image file paths generated from the PDF.
+                After processing, delegate to ClassifyViaLlmAgent using transfer_to_classify_via_llm."""
             ),
             model_client=model_client,
             tools=[paper_itemizer],
