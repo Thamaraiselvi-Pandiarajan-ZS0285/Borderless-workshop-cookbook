@@ -1,0 +1,9 @@
+{
+	"name": "bap-datafact",
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "2c96be74-604b-4ee0-91da-80e83bb1a56f",
+		"tenantId": "f609f5e5-b221-43f3-be25-48bb8ce0552e"
+	}
+}
