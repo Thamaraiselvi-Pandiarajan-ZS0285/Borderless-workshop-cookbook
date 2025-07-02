@@ -2,7 +2,7 @@ from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 from openai import AzureOpenAI
 
 from backend.src.config.dev_config import AZURE_OPENAI_DEPLOYMENT_NAME, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, \
-    AZURE_OPENAI_API_KEY, MODEL_INFO, MAX_OUTPUT_TOKEN, MAX_RETRY, REQUEST_TIME_OUT, AZURE_OPENAI_MODEL_NAME
+    AZURE_OPENAI_API_KEY, MODEL_INFO, MAX_OUTPUT_TOKEN, MAX_RETRY, REQUEST_TIME_OUT, AZURE_OPENAI_MODEL_NAME,AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME
 
 
 class OpenAiClient:
@@ -24,3 +24,16 @@ class OpenAiClient:
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             api_version=AZURE_OPENAI_API_VERSION
         )
+
+        self.openai_embedding_client = AzureOpenAI(
+            api_key=AZURE_OPENAI_API_KEY,
+            api_version=AZURE_OPENAI_API_VERSION,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            azure_deployment=AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME
+        )
+
+        self.openai_embedding_client.model_info = {
+            "vision": False,
+        }
+
+
