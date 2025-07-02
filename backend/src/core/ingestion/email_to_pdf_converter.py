@@ -42,19 +42,13 @@ class HTMLEmailToPDFConverter(EmailConverter):
             assert isinstance(email_data, dict), "email_data must be a dictionary"
             assert isinstance(output_path, str), "output_path must be a string"
 
-            email=email_data.get("email")
-            attachments=email_data.get("attachment")
-            email_body=email.get("body")
-            attachment_name = [att['name'] for att in attachments]
-
             html: str = self.template.render(
-                subject=email.get("subject", ""),
-                sender=email.get("sender", ""),
-                received_at=email.get("receivedDateTime", ""),
-                body=email_body.get("content", ""),
-                attachments=attachment_name
+                subject=email_data.get("subject", ""),
+                sender=email_data.get("sender", ""),
+                received_at=email_data.get("received_at", ""),
+                body=email_data.get("body", ""),
+                attachments=email_data.get("attachments", [])
             )
-
             logger.debug(f"Rendered HTML preview (first 500 chars):\n{html[:500]}")
 
 
