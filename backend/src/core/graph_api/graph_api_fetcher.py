@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any
 import requests
 from msal import ConfidentialClientApplication
 from backend.src.config.dev_config import *
@@ -25,7 +25,7 @@ class GraphEmailFetcher:
             raise Exception("Authentication failed: " + token_response.get("error_description"))
         return token_response["access_token"]
 
-    def get_messages_with_attachments(self, top: int = 10) -> List[EmailClassificationRequest]:
+    def get_messages_with_attachments(self, top: int = 10) -> Any:
         url = f"{GRAPH_API_ENDPOINT}/users/{SHARED_MAILBOX}/mailFolders/inbox/messages?$top={top}"
         response = requests.get(url, headers=self.headers)
         if response.status_code != 200:
