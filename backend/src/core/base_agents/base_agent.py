@@ -1,6 +1,5 @@
 from autogen_agentchat.agents import AssistantAgent
 
-
 class BaseAgent:
     def __init__(self, model_client):
         self.model_client = model_client

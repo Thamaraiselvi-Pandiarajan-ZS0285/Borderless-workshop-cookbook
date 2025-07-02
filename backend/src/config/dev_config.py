@@ -22,7 +22,7 @@ ORCHESTRATOR_AGENT_NAME = "OrchesrationAgent"
 RETRIEVAL_AGENT_NAME ="RetrievalAgent"
 MODEL_INFO = {
     "family": "gpt-4",
-    "vision": False,
+    "vision": True,
     "json_output": False,
     "function_calling": False
 }
@@ -37,5 +37,13 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME ="text-embedding-3-small"
 AZURE_OPENAI_MODEL_NAME ="gpt-4.1-mini-2025-04-14"
 DEFAULT_IMAGE_FORMAT = ".jpg"
 EMAIL_TO_PDF_PATH = "/data"
+
+CLIENT_ID = '8d9e284a-9fa3-451c-866f-772284113fc9'
+CLIENT_SECRET = 'fMw8Q~vjLuz4iUIaKXL2z04MvZlStMBYMxZMgdmI'
+TENANT_ID = 'f609f5e5-b221-43f3-be25-48bb8ce0552e'
+AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+SCOPE = ["https://graph.microsoft.com/.default"]
+GRAPH_API_ENDPOINT = "https://graph.microsoft.com/v1.0"
+SHARED_MAILBOX = 'bapuser@zuciinc.onmicrosoft.com'
 
 BASE_PATH = "/home/dinesh.krishna@zucisystems.com/workspace/data/"
