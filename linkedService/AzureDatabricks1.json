@@ -1,0 +1,13 @@
+{
+	"name": "AzureDatabricks1",
+	"properties": {
+		"annotations": [],
+		"type": "AzureDatabricks",
+		"typeProperties": {
+			"domain": "https://adb-4083843278111818.18.azuredatabricks.net",
+			"authentication": "MSI",
+			"workspaceResourceId": "/subscriptions/2e64ac5c-bc96-4389-a5bb-fc1c2e7bf8d7/resourceGroups/Borderless-access-pilot/providers/Microsoft.Databricks/workspaces/bap-databricks-python",
+			"existingClusterId": "0704-092540-9ldchn2k"
+		}
+	}
+}
