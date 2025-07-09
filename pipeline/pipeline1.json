@@ -41,6 +41,7 @@
 					"secureOutput": false,
 					"secureInput": false
 				},
+				"userProperties": [],
 				"typeProperties": {
 					"notebookPath": "/Users/thamaraiselvi.p@zucisystems.com/fetch_and_store_email"
 				},
