@@ -3,9 +3,16 @@
 	"properties": {
 		"activities": [
 			{
-				"name": "Notebook1",
+				"name": "EmailProcessor",
 				"type": "DatabricksNotebook",
-				"dependsOn": [],
+				"dependsOn": [
+					{
+						"activity": "Fetch_Raw_Emails",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
 				"policy": {
 					"timeout": "0.12:00:00",
 					"retry": 0,
@@ -16,6 +23,26 @@
 				"userProperties": [],
 				"typeProperties": {
 					"notebookPath": "/Users/thamaraiselvi.p@zucisystems.com/email_pipeline_driver"
+				},
+				"linkedServiceName": {
+					"referenceName": "AzureDatabricks1",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Fetch_Raw_Emails",
+				"description": "Fetching raw emails from outlook via graph api and store it into posgres raw tables",
+				"type": "DatabricksNotebook",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"typeProperties": {
+					"notebookPath": "/Users/thamaraiselvi.p@zucisystems.com/fetch_and_store_email"
 				},
 				"linkedServiceName": {
 					"referenceName": "AzureDatabricks1",
