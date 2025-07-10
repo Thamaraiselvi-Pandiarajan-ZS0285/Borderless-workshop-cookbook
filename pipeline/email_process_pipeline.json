@@ -7,7 +7,7 @@
 				"type": "DatabricksNotebook",
 				"dependsOn": [
 					{
-						"activity": "Fetch_Raw_Emails",
+						"activity": "Fetch_Raw_Outlook_Emails",
 						"dependencyConditions": [
 							"Succeeded"
 						]
@@ -30,7 +30,7 @@
 				}
 			},
 			{
-				"name": "Fetch_Raw_Emails",
+				"name": "Fetch_Raw_Outlook_Emails",
 				"description": "Fetching raw emails from outlook via graph api and store it into posgres raw tables",
 				"type": "DatabricksNotebook",
 				"dependsOn": [],
