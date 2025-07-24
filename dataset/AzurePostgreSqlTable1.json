@@ -10,7 +10,7 @@
 		"schema": [],
 		"typeProperties": {
 			"schema": "public",
-			"table": "test_emp"
+			"table": "dept"
 		}
 	}
 }
