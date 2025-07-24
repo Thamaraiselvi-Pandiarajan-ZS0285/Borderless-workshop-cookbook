@@ -9,7 +9,7 @@
 		"type": "AzurePostgreSqlTable",
 		"schema": [],
 		"typeProperties": {
-			"schema": "postgres",
+			"schema": "public",
 			"table": "test_emp"
 		}
 	}
