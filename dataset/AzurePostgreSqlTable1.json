@@ -5,12 +5,13 @@
 			"referenceName": "AzurePostgreSql1",
 			"type": "LinkedServiceReference"
 		},
+		"parameters": {
+			"SinkTableName": {
+				"type": "string"
+			}
+		},
 		"annotations": [],
 		"type": "AzurePostgreSqlTable",
-		"schema": [],
-		"typeProperties": {
-			"schema": "public",
-			"table": "dept"
-		}
+		"schema": []
 	}
 }
