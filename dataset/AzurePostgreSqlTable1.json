@@ -2,7 +2,7 @@
 	"name": "AzurePostgreSqlTable1",
 	"properties": {
 		"linkedServiceName": {
-			"referenceName": "AzurePostgreSql1",
+			"referenceName": "AzurePostgreSql2",
 			"type": "LinkedServiceReference"
 		},
 		"parameters": {
@@ -12,6 +12,10 @@
 		},
 		"annotations": [],
 		"type": "AzurePostgreSqlTable",
-		"schema": []
+		"schema": [],
+		"typeProperties": {
+			"schema": "",
+			"table": "@dataset().SinkTableName"
+		}
 	}
 }
