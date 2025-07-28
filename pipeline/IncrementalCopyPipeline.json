@@ -68,13 +68,13 @@
 							"type": "Copy",
 							"dependsOn": [
 								{
-									"activity": "LookupOldWaterMarkActivity",
+									"activity": "LookupNewWaterMarkActivity",
 									"dependencyConditions": [
 										"Succeeded"
 									]
 								},
 								{
-									"activity": "LookupNewWaterMarkActivity",
+									"activity": "LookupOldWaterMarkActivity",
 									"dependencyConditions": [
 										"Succeeded"
 									]
@@ -87,6 +87,7 @@
 								"secureOutput": false,
 								"secureInput": false
 							},
+							"userProperties": [],
 							"typeProperties": {
 								"source": {
 									"type": "AmazonRdsForSqlServerSource",
@@ -153,7 +154,7 @@
 										"type": "DateTime"
 									},
 									"TableName": {
-										"value": "@{activity('LookupOldWaterMarkActivity').output.firstRow.TableName}",
+										"value": "@{activity('LookupOldWaterMarkActivity').output.firstRow.TableName}\n",
 										"type": "String"
 									}
 								}
