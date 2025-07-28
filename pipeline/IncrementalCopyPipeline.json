@@ -161,7 +161,10 @@
 										"type": "DateTime"
 									},
 									"TableName": {
-										"value": "@{activity('LookupOldWaterMarkActivity').output.firstRow.TableName}\n",
+										"value": {
+											"value": "@replace(activity('LookupOldWaterMarkActivity').output.firstRow.TableName, '\\n', '')",
+											"type": "Expression"
+										},
 										"type": "String"
 									}
 								}
