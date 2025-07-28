@@ -1,5 +1,5 @@
 {
-	"name": "AmazonRdsForSqlServerTable1",
+	"name": "SQLServer_Sourcedataset",
 	"properties": {
 		"linkedServiceName": {
 			"referenceName": "AmazonRdsForSqlServer1",
@@ -21,10 +21,6 @@
 				"name": "loc",
 				"type": "varchar"
 			}
-		],
-		"typeProperties": {
-			"schema": "dbo",
-			"table": "dept"
-		}
+		]
 	}
 }

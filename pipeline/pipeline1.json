@@ -38,7 +38,7 @@
 				},
 				"inputs": [
 					{
-						"referenceName": "AmazonRdsForSqlServerTable1",
+						"referenceName": "SQLServer_Sourcedataset",
 						"type": "DatasetReference"
 					}
 				],
