@@ -146,6 +146,19 @@
 					"secureInput": false
 				},
 				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[dbo].[usp_write_watermark]",
+					"storedProcedureParameters": {
+						"LastModifiedtime": {
+							"value": "@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}",
+							"type": "DateTime"
+						},
+						"TableName": {
+							"value": "@{activity('LookupOldWaterMarkActivity').output.firstRow.TableName}",
+							"type": "String"
+						}
+					}
+				},
 				"linkedServiceName": {
 					"referenceName": "AmazonRdsForSqlServer1",
 					"type": "LinkedServiceReference"
