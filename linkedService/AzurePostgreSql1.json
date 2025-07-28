@@ -4,5 +4,5 @@
 		"type": "AzurePostgreSql",
 		"annotations": []
 	},
-	"sinkTableName": "@dataset().SinkTableName"
+	"type": "Microsoft.DataFactory/factories/linkedservices"
 }
