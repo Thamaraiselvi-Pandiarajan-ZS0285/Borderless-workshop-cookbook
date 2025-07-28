@@ -200,11 +200,6 @@
 				}
 			}
 		],
-		"parameters": {
-			"tableList": {
-				"type": "array"
-			}
-		},
 		"annotations": []
 	}
 }
