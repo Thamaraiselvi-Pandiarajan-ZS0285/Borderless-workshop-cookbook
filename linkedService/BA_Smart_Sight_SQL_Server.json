@@ -1,0 +1,17 @@
+{
+	"name": "BA_Smart_Sight_SQL_Server",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "AmazonRdsForSqlServer",
+		"typeProperties": {
+			"server": "ba-agenticai.database.windows.net",
+			"database": "ba-agenticaidatabase",
+			"encrypt": "mandatory",
+			"trustServerCertificate": false,
+			"authenticationType": "SQL",
+			"userName": "agenticai",
+			"encryptedCredential": "ew0KICAiVmVyc2lvbiI6ICIyMDE3LTExLTMwIiwNCiAgIlByb3RlY3Rpb25Nb2RlIjogIktleSIsDQogICJTZWNyZXRDb250ZW50VHlwZSI6ICJQbGFpbnRleHQiLA0KICAiQ3JlZGVudGlhbElkIjogIkRBVEFGQUNUT1JZQDdBMzEyRjdCLTk4OTctNEI0Ny1CM0ZELUIwNDY4Qjc2NzAxN181YWJjZDAwNC0zYWU1LTRhNzgtOTU2OC1jMzI5NDUyOGRkODUiDQp9"
+		}
+	}
+}
