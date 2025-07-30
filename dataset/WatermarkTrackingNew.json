@@ -1,0 +1,29 @@
+{
+	"name": "WatermarkTrackingNew",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "BA_Postgres_Dev",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzurePostgreSqlTable",
+		"schema": [
+			{
+				"name": "table_name",
+				"type": "character varying",
+				"precision": 0,
+				"scale": 0
+			},
+			{
+				"name": "watermark_value",
+				"type": "timestamp with time zone",
+				"precision": 0,
+				"scale": 0
+			}
+		],
+		"typeProperties": {
+			"schema": "etl_config",
+			"table": "watermark_tracking"
+		}
+	}
+}

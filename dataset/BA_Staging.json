@@ -1,8 +1,8 @@
 {
-	"name": "AzurePostgreSqlTable1",
+	"name": "BA_Staging",
 	"properties": {
 		"linkedServiceName": {
-			"referenceName": "AzurePostgreSql2",
+			"referenceName": "BA_Postgres_Dev",
 			"type": "LinkedServiceReference"
 		},
 		"parameters": {
@@ -14,8 +14,10 @@
 		"type": "AzurePostgreSqlTable",
 		"schema": [],
 		"typeProperties": {
-			"schema": "",
-			"table": "@dataset().SinkTableName"
+			"table": {
+				"value": "@dataset().SinkTableName",
+				"type": "Expression"
+			}
 		}
 	}
 }

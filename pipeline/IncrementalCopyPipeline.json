@@ -7,7 +7,7 @@
 				"type": "ForEach",
 				"dependsOn": [
 					{
-						"activity": "ConfigTableLookup",
+						"activity": "SourceTableConfigLookup",
 						"dependencyConditions": [
 							"Succeeded"
 						]
@@ -34,13 +34,12 @@
 							"userProperties": [],
 							"typeProperties": {
 								"source": {
-									"type": "AmazonRdsForSqlServerSource",
-									"sqlReaderQuery": "select * from watermarktable where TableName  =  '@{item().TABLE_NAME}'",
-									"queryTimeout": "02:00:00",
-									"partitionOption": "None"
+									"type": "AzurePostgreSqlSource",
+									"partitionOption": "None",
+									"queryTimeout": "02:00:00"
 								},
 								"dataset": {
-									"referenceName": "WatermarkDatasetNew",
+									"referenceName": "WatermarkTrackingNew",
 									"type": "DatasetReference"
 								}
 							}
@@ -60,12 +59,15 @@
 							"typeProperties": {
 								"source": {
 									"type": "AmazonRdsForSqlServerSource",
-									"sqlReaderQuery": "select MAX(@{item().WaterMark_Column}) as NewWatermarkvalue from @{item().TABLE_NAME}",
+									"sqlReaderQuery": {
+										"value": "select MAX(@{item().WaterMark_Column}) as NewWatermarkvalue from @{item().TABLE_NAME}",
+										"type": "Expression"
+									},
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
 								"dataset": {
-									"referenceName": "SQLServer_Sourcedataset",
+									"referenceName": "BA_SmartSight_Source",
 									"type": "DatasetReference"
 								}
 							}
@@ -98,7 +100,10 @@
 							"typeProperties": {
 								"source": {
 									"type": "AmazonRdsForSqlServerSource",
-									"sqlReaderQuery": "select * from @{item().TABLE_NAME} where @{item().WaterMark_Column} > '@{activity('LookupOldWaterMarkActivity').output.firstRow.WatermarkValue}' and @{item().WaterMark_Column} <= '@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}'",
+									"sqlReaderQuery": {
+										"value": "select * from @{item().TABLE_NAME} where @{item().WaterMark_Column} > '@{activity('LookupOldWaterMarkActivity').output.firstRow.WatermarkValue}' and @{item().WaterMark_Column} <= '@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}'",
+										"type": "Expression"
+									},
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
@@ -120,13 +125,13 @@
 							},
 							"inputs": [
 								{
-									"referenceName": "SQLServer_Sourcedataset",
+									"referenceName": "BA_SmartSight_Source",
 									"type": "DatasetReference"
 								}
 							],
 							"outputs": [
 								{
-									"referenceName": "AzurePostgreSqlTable1",
+									"referenceName": "BA_Staging",
 									"type": "DatasetReference",
 									"parameters": {
 										"SinkTableName": "@{item().TABLE_NAME}"
@@ -135,8 +140,8 @@
 							]
 						},
 						{
-							"name": "StoredProceduretoWriteWatermarkActivity",
-							"type": "SqlServerStoredProcedure",
+							"name": "UpdateWatermarkTracking",
+							"type": "Script",
 							"dependsOn": [
 								{
 									"activity": "IncrementalCopyActivity",
@@ -153,32 +158,28 @@
 								"secureInput": false
 							},
 							"userProperties": [],
-							"typeProperties": {
-								"storedProcedureName": "[dbo].[usp_write_watermark]",
-								"storedProcedureParameters": {
-									"LastModifiedtime": {
-										"value": "@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}",
-										"type": "DateTime"
-									},
-									"TableName": {
-										"value": {
-											"value": "@replace(activity('LookupOldWaterMarkActivity').output.firstRow.TableName, '\\n', '')",
-											"type": "Expression"
-										},
-										"type": "String"
-									}
-								}
-							},
 							"linkedServiceName": {
-								"referenceName": "AmazonRdsForSqlServer1",
+								"referenceName": "BA_Postgres_Dev",
 								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "    UPDATE watermarktable\n    SET WatermarkValue = @{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}\n    WHERE TableName = @replace(activity('LookupOldWaterMarkActivity').output.firstRow.TableName, '\\n', '');",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
 							}
 						}
 					]
 				}
 			},
 			{
-				"name": "ConfigTableLookup",
+				"name": "SourceTableConfigLookup",
 				"type": "Lookup",
 				"dependsOn": [],
 				"policy": {
@@ -196,7 +197,7 @@
 						"queryTimeout": "02:00:00"
 					},
 					"dataset": {
-						"referenceName": "ConfigTable",
+						"referenceName": "SourceTableConfig",
 						"type": "DatasetReference"
 					},
 					"firstRowOnly": false

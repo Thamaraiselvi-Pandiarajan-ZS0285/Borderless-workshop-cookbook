@@ -1,5 +1,5 @@
 {
-	"name": "BA_SmartSight_dataset",
+	"name": "BA_SmartSight_Source",
 	"properties": {
 		"linkedServiceName": {
 			"referenceName": "BA_Smart_Sight_SQL_Server",
