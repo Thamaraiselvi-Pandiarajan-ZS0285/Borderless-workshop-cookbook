@@ -1,8 +1,8 @@
 {
-	"name": "ConfigTable",
+	"name": "SourceTableConfig",
 	"properties": {
 		"linkedServiceName": {
-			"referenceName": "AzurePostgreSql2",
+			"referenceName": "BA_Postgres_Dev",
 			"type": "LinkedServiceReference"
 		},
 		"annotations": [],
@@ -14,10 +14,6 @@
 				"precision": 0,
 				"scale": 0
 			}
-		],
-		"typeProperties": {
-			"schema": "etl_config",
-			"table": "source_table_config"
-		}
+		]
 	}
 }
