@@ -101,7 +101,7 @@
 								"source": {
 									"type": "AmazonRdsForSqlServerSource",
 									"sqlReaderQuery": {
-										"value": "select * from @{item().TABLE_NAME} where @{item().WaterMark_Column} > '@{activity('LookupOldWaterMarkActivity').output.firstRow.WatermarkValue}' and @{item().WaterMark_Column} <= '@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}'",
+										"value": "select * from @{item().table_name} where @{item().watermark_column} > '@{activity('LookupOldWaterMarkActivity').output.firstRow.watermark_value}' and @{item().watermark_column} <= '@{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}'",
 										"type": "Expression"
 									},
 									"queryTimeout": "02:00:00",
