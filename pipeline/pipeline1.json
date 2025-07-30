@@ -38,13 +38,13 @@
 				},
 				"inputs": [
 					{
-						"referenceName": "SQLServer_Sourcedataset",
+						"referenceName": "BA_SmartSight_Source",
 						"type": "DatasetReference"
 					}
 				],
 				"outputs": [
 					{
-						"referenceName": "AzurePostgreSqlTable1",
+						"referenceName": "BA_Staging",
 						"type": "DatasetReference"
 					}
 				]
