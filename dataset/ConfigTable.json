@@ -16,8 +16,8 @@
 			}
 		],
 		"typeProperties": {
-			"schema": "public",
-			"table": "config_table"
+			"schema": "etl_config",
+			"table": "source_table_config"
 		}
 	}
 }
