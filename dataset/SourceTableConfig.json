@@ -14,6 +14,10 @@
 				"precision": 0,
 				"scale": 0
 			}
-		]
+		],
+		"typeProperties": {
+			"schema": "etl_config",
+			"table": "source_table_config"
+		}
 	}
 }
