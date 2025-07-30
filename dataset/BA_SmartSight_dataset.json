@@ -1,8 +1,8 @@
 {
-	"name": "SQLServer_Sourcedataset",
+	"name": "BA_SmartSight_dataset",
 	"properties": {
 		"linkedServiceName": {
-			"referenceName": "AmazonRdsForSqlServer1",
+			"referenceName": "BA_Smart_Sight_SQL_Server",
 			"type": "LinkedServiceReference"
 		},
 		"annotations": [],
