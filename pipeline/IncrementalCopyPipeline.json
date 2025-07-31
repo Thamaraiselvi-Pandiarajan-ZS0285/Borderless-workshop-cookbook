@@ -35,6 +35,10 @@
 							"typeProperties": {
 								"source": {
 									"type": "AzurePostgreSqlSource",
+									"query": {
+										"value": "select watermark_value as OldWatermarkvalue from etl_config.watermark_tracking where table_name = '@{item().TABLE_NAME}'",
+										"type": "Expression"
+									},
 									"partitionOption": "None",
 									"queryTimeout": "02:00:00"
 								},
