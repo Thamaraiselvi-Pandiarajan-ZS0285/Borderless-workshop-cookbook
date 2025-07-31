@@ -167,7 +167,7 @@
 									{
 										"type": "Query",
 										"text": {
-											"value": "    UPDATE watermarktable\n    SET WatermarkValue = @{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}\n    WHERE TableName = @replace(activity('LookupOldWaterMarkActivity').output.firstRow.table_name, '\\n', '');",
+											"value": "    UPDATE watermarktable\n    SET WatermarkValue = @{activity('LookupNewWaterMarkActivity').output.firstRow.NewWatermarkvalue}\n    WHERE TableName = @replace{activity('LookupOldWaterMarkActivity').output.firstRow.table_name, '\\n', ''};",
 											"type": "Expression"
 										}
 									}
