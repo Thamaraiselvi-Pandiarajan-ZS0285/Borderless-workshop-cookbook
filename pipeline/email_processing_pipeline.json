@@ -21,6 +21,42 @@
 					"referenceName": "AzureDatabricks1",
 					"type": "LinkedServiceReference"
 				}
+			},
+			{
+				"name": "UpdateAudit",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "EmailProcessor",
+						"dependencyConditions": [
+							"Completed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "BA_Postgres_Dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO etl_audit.pipeline_audit_log (\n    datafactory_name,\n    pipeline_name,\n    run_id,\n    source,\n    destination,\n    trigger_type,\n    trigger_id,\n    trigger_name,\n    trigger_time,\n    rows_copied,\n    rows_read,\n    no_parallel_copies,\n    copy_duration_secs,\n    effective_integration_runtime,\n    source_type,\n    sink_type,\n    execution_status,\n    copyactivity_start_time,\n    copyactivity_end_time,\n    copyactivity_queuing_duration_secs,\n    copyactivity_time_to_first_byte_secs,\n    copyactivity_transfer_duration_secs\n)\nSELECT\n    '@{pipeline().DataFactory}'::text,\n    '@{pipeline().Pipeline}'::text,\n    '@{pipeline().RunId}'::uuid,\n    ''::text,\n    ''::text,\n    '@{pipeline().TriggerType}'::text,\n    '@{pipeline().TriggerId}'::text,\n    '@{pipeline().TriggerName}'::text,\n    '@{pipeline().TriggerTime}'::timestamp,\n    @{activity('EmailProcessor').output.rowsCopied}::bigint,\n    @{activity('EmailProcessor').output.rowsRead}::bigint,\n    @{activity('EmailProcessor').output.usedParallelCopies}::int,\n    @{activity('EmailProcessor').output.copyDuration}::numeric,\n    '@{activity('EmailProcessor').output.effectiveIntegrationRuntime}'::text,\n    '@{activity('EmailProcessor').output.executionDetails[0].source.type}'::text,\n    '@{activity('EmailProcessor').output.executionDetails[0].sink.type}'::text,\n    '@{activity('EmailProcessor').output.executionDetails[0].status}'::text,\n    '@{activity('EmailProcessor').output.executionDetails[0].start}'::timestamp,\n    '@{utcnow()}'::timestamp,\n    @{activity('EmailProcessor').output.executionDetails[0].detailedDurations.queuingDuration}::numeric,\n    @{activity('EmailProcessor').output.executionDetails[0].detailedDurations.timeToFirstByte}::numeric,\n    @{activity('EmailProcessor').output.executionDetails[0].detailedDurations.transferDuration}::numeric\n;",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
 			}
 		],
 		"annotations": []
