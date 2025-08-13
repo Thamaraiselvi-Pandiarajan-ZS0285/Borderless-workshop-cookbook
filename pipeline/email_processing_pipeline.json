@@ -1,0 +1,28 @@
+{
+	"name": "email_processing_pipeline",
+	"properties": {
+		"activities": [
+			{
+				"name": "EmailProcessor",
+				"type": "DatabricksNotebook",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/thamaraiselvi.p@zucisystems.com/borderless-ai/data-pipeline/notebooks/email_processing_pipeline"
+				},
+				"linkedServiceName": {
+					"referenceName": "AzureDatabricks1",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"annotations": []
+	}
+}
